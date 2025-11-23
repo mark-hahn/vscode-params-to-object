@@ -57,7 +57,18 @@ export async function convertCommandHandler(..._args: any[]): Promise<void> {
     const jsTsFiles = jsTsFilesRel.map((f) => path.join(workspaceRoot, f));
     console.log('[params-to-object] workspaceRoot:', workspaceRoot);
     console.log('[params-to-object] includePatterns:', includePatterns, 'excludePatterns:', excludePatterns, 'found files:', jsTsFiles.length);
-    if (jsTsFiles.length > 0) project.addSourceFilesAtPaths(jsTsFiles);
+    if (jsTsFiles.length > 0) {
+      project.addSourceFilesAtPaths(jsTsFiles);
+    } else {
+      // Fallback: glob returned nothing (dev-host or config quirks). Add common JS/TS globs directly
+      const fallbackGlob = path.join(workspaceRoot, '**/*.{js,ts,jsx,tsx,mjs,cjs}');
+      console.log('[params-to-object] glob found no files; adding fallback project glob:', fallbackGlob);
+      try {
+        project.addSourceFilesAtPaths(fallbackGlob);
+      } catch (e) {
+        console.log('[params-to-object] fallback addSourceFilesAtPaths failed', e);
+      }
+    }
 
     // Ensure current file is in the project
     let sourceFile = project.getSourceFile(filePath);
@@ -249,6 +260,7 @@ export async function convertCommandHandler(..._args: any[]): Promise<void> {
     if (fuzzy.length === 0) {
       const edit = new vscode.WorkspaceEdit();
       const docsToSave = new Map<string, vscode.TextDocument>();
+      const replByFile = new Map<string, string>();
       const buildReplacement = (exprText: string, argsTextArr: string[]) => {
         const props = paramNames.map((name, idx) => {
           const aText = argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
@@ -271,7 +283,15 @@ export async function convertCommandHandler(..._args: any[]): Promise<void> {
       }
       const ok = await vscode.workspace.applyEdit(edit);
       console.log('[params-to-object] applyEdit result:', ok);
-      for (const [fp, d] of docsToSave) { await d.save(); console.log('[params-to-object] saved', fp); }
+      for (const [fp, d] of docsToSave) {
+        await d.save();
+        console.log('[params-to-object] saved', fp);
+        try {
+          const afterText = d.getText();
+          const expected = replByFile.get(fp);
+          console.log('[params-to-object] post-save buffer len:', afterText.length, 'contains expected repl?', expected ? afterText.indexOf(expected) >= 0 : 'no-expected-repl');
+        } catch (e) { console.log('[params-to-object] error reading buffer after save for', fp, e); }
+      }
 
       const paramTypes = params.map((p: any) => {
         const tn = p.getTypeNode && p.getTypeNode();
@@ -409,6 +429,7 @@ export async function convertCommandHandler(..._args: any[]): Promise<void> {
     };
 
     const allCandidates = [...confirmed, ...fuzzy];
+    const replAllMap = new Map<string, string>();
     for (const c of allCandidates) {
       if (c.filePath && typeof c.start === 'number' && typeof c.end === 'number') {
         const uri = vscode.Uri.file(c.filePath);
@@ -416,7 +437,9 @@ export async function convertCommandHandler(..._args: any[]): Promise<void> {
         docsToSaveAll.set(c.filePath, doc);
         const startP = doc.positionAt(c.start);
         const endP = doc.positionAt(c.end);
-        editAll.replace(uri, new vscode.Range(startP, endP), buildReplacementAll(c.exprText, c.argsText));
+        const replAll = buildReplacementAll(c.exprText, c.argsText);
+        console.log('[params-to-object] scheduling replace (all) in', c.filePath, 'range', c.start, c.end);
+        editAll.replace(uri, new vscode.Range(startP, endP), replAll);
       } else if (c.filePath && typeof c.rangeStart === 'number') {
         const uri = vscode.Uri.file(c.filePath);
         const doc = await vscode.workspace.openTextDocument(uri);
@@ -440,7 +463,15 @@ export async function convertCommandHandler(..._args: any[]): Promise<void> {
 
     const ok2 = await vscode.workspace.applyEdit(editAll);
     console.log('[params-to-object] applyEdit(all) result:', ok2);
-    for (const [fp, d] of docsToSaveAll) { await d.save(); console.log('[params-to-object] saved', fp); }
+    for (const [fp, d] of docsToSaveAll) {
+      await d.save();
+      console.log('[params-to-object] saved', fp);
+      try {
+        const afterText = d.getText();
+        const expected = replAllMap.get(fp);
+        console.log('[params-to-object] post-save buffer len:', afterText.length, 'contains expected repl?', expected ? afterText.indexOf(expected) >= 0 : 'no-expected-repl');
+      } catch (e) { console.log('[params-to-object] error reading buffer after save for', fp, e); }
+    }
 
     const paramTypes2 = params.map((p: any) => {
       const tn = p.getTypeNode && p.getTypeNode();
