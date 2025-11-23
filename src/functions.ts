@@ -21,8 +21,8 @@ export function checkFunctionsCommandHandler(): void {
   const filePath = editor.document.fileName;
   const containingFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
   const workspaceRoot = containingFolder ? containingFolder.uri.fsPath : workspaceFolders[0].uri.fsPath;
-  console.log('[params-to-object] activeFile:', filePath);
-  console.log('[params-to-object] chosen workspaceRoot:', workspaceRoot);
+  log('activeFile:', filePath);
+  log('chosen workspaceRoot:', workspaceRoot);
 
   try {
     const project = new Project({ tsConfigFilePath: undefined, compilerOptions: { allowJs: true, checkJs: false } });
@@ -96,11 +96,11 @@ export function checkFunctionsCommandHandler(): void {
       else results.works.push({ name, note: anyCalls ? 'All matching calls resolved' : 'No matching calls found' });
     }
 
-    console.log('Params-to-Object check results for', filePath);
-    console.log('Works:');
-    for (const w of results.works) console.log('  -', w.name, '-', w.note);
-    console.log('Not reliable:');
-    for (const n of results.notWorks) console.log('  -', n.name, '-', n.reason);
+    log('Params-to-Object check results for', filePath);
+    log('Works:');
+    for (const w of results.works) log('  -', w.name, '-', w.note);
+    log('Not reliable:');
+    for (const n of results.notWorks) log('  -', n.name, '-', n.reason);
 
     void vscode.window.showInformationMessage('Checked functions — see developer console for details.');
   } catch (err: any) {

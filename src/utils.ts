@@ -17,14 +17,14 @@ export function getLog(module: string) : {
     if (hide) return;
     const line = `[ext:${module}] ${name} started${msg ? ', ' + msg : ''}`;
     outputChannel.appendLine(line);
-    console.log(line);
+    log(line);
   };
 
   const end = function (name: string, onlySlow = false, msg = ''): void {
     if (!timers[name]) {
       const line = `[ext:${module}] ${name} ended${msg ? ', ' + msg : ''}`;
       outputChannel.appendLine(line);
-      console.log(line);
+      log(line);
       return;
     }
     const endTime = Date.now();
@@ -32,7 +32,7 @@ export function getLog(module: string) : {
     if (onlySlow && duration < 100) return;
     const line = `[ext:${module}] ${name} ended, ${duration}ms${msg ? ', ' + msg : ''}`;
     outputChannel.appendLine(line);
-    console.log(line);
+    log(line);
   };
 
   const log = function (...args: any[]): void {
@@ -76,7 +76,7 @@ export function getLog(module: string) : {
 
     outputChannel.appendLine(line);
     if (errFlag) console.error(line);
-    else console.log(line);
+    else log(line);
     if (infoFlag) void vscode.window.showInformationMessage(infoLine);
   };
 

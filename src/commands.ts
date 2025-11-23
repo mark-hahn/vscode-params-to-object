@@ -26,8 +26,8 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
   const workspaceRoot = containingFolder
     ? containingFolder.uri.fsPath
     : workspaceFolders[0].uri.fsPath;
-  console.log('[params-to-object] activeFile:', filePath);
-  console.log('[params-to-object] chosen workspaceRoot:', workspaceRoot);
+  log('activeFile:', filePath);
+  log('chosen workspaceRoot:', workspaceRoot);
 
   const originalEditor = vscode.window.activeTextEditor;
   const originalSelection = originalEditor ? originalEditor.selection : undefined;
@@ -59,18 +59,18 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       }
     }
     const jsTsFiles = Array.from(foundSet);
-    console.log('[params-to-object] workspaceRoot:', workspaceRoot);
-    console.log('[params-to-object] includePatterns:', includePatterns, 'excludePatterns:', excludePatterns, 'found files:', jsTsFiles.length);
+    log('workspaceRoot:', workspaceRoot);
+    log('includePatterns:', includePatterns, 'excludePatterns:', excludePatterns, 'found files:', jsTsFiles.length);
     if (jsTsFiles.length > 0) {
       project.addSourceFilesAtPaths(jsTsFiles);
     } else {
       // Fallback: glob returned nothing (dev-host or config quirks). Add common JS/TS globs directly
       const fallbackGlob = path.join(workspaceRoot, '**/*.{js,ts,jsx,tsx,mjs,cjs}');
-      console.log('[params-to-object] glob found no files; adding fallback project glob:', fallbackGlob);
+      log('glob found no files; adding fallback project glob:', fallbackGlob);
       try {
         project.addSourceFilesAtPaths(fallbackGlob);
       } catch (e) {
-        console.log('[params-to-object] fallback addSourceFilesAtPaths failed', e);
+        log('fallback addSourceFilesAtPaths failed', e);
       }
     }
 
@@ -161,7 +161,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     let fatalConflict: any = null;
 
     const files = project.getSourceFiles();
-    console.log('[params-to-object] scanning', files.length, 'source files (node_modules excluded where possible)');
+    log('scanning', files.length, 'source files (node_modules excluded where possible)');
     for (const sf of files) {
       const sfPath = sf.getFilePath && sf.getFilePath();
       if (sfPath && sfPath.indexOf(path.sep + 'node_modules' + path.sep) >= 0) continue;
@@ -181,9 +181,9 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         if (looksLikeCall) {
           try {
             const dbgArgs = call.getArguments().map((a: any) => a ? a.getText() : 'undefined');
-            console.log('[params-to-object] candidate call:', { file: sf.getFilePath(), exprText, args: dbgArgs, resolvedCalled: !!resolvedCalled });
+            log('candidate call:', { file: sf.getFilePath(), exprText, args: dbgArgs, resolvedCalled: !!resolvedCalled });
           } catch (e) {
-            console.log('[params-to-object] candidate call (could not read args) ', { file: sf.getFilePath(), exprText, resolvedCalled: !!resolvedCalled });
+            log('candidate call (could not read args) ', { file: sf.getFilePath(), exprText, resolvedCalled: !!resolvedCalled });
           }
         }
 
@@ -195,7 +195,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               const args = call.getArguments();
               const argsText = args.map((a: any) => a ? a.getText() : 'undefined');
               if (argsText.length === 1 && typeof argsText[0] === 'string' && argsText[0].trim().startsWith('{')) {
-                console.log('[params-to-object] skipping already-object call at', sf.getFilePath(), 'text:', argsText[0]);
+                log('skipping already-object call at', sf.getFilePath(), 'text:', argsText[0]);
               } else {
                 if (args.length === 0) {
                   fuzzy.push({ filePath: sf.getFilePath(), start: call.getStart(), end: call.getEnd(), exprText: expr.getText(), argsText, reason: 'no-args', score: 10 });
@@ -252,13 +252,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
 
     const safeSerial = (arr: any[]) => arr.map(c => ({ filePath: c.filePath, start: c.start, end: c.end, exprText: c.exprText, argsText: c.argsText, reason: c.reason }));
-    console.log('[params-to-object] confirmed call count:', confirmed.length, 'fuzzy count:', fuzzy.length);
+    log('confirmed call count:', confirmed.length, 'fuzzy count:', fuzzy.length);
     try {
-      console.log('[params-to-object] confirmed details:', JSON.stringify(safeSerial(confirmed), null, 2));
-      console.log('[params-to-object] fuzzy details:', JSON.stringify(safeSerial(fuzzy), null, 2));
+      log('confirmed details:', JSON.stringify(safeSerial(confirmed), null, 2));
+      log('fuzzy details:', JSON.stringify(safeSerial(fuzzy), null, 2));
     } catch (e) {
-      console.log('[params-to-object] confirmed examples:', confirmed.slice(0, 10));
-      console.log('[params-to-object] fuzzy examples:', fuzzy.slice(0, 10));
+      log('confirmed examples:', confirmed.slice(0, 10));
+      log('fuzzy examples:', fuzzy.slice(0, 10));
     }
 
     if (fuzzy.length === 0) {
@@ -281,20 +281,20 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const endPos = doc.positionAt(c.end);
         const orig = doc.getText().slice(c.start, c.end);
         const repl = buildReplacement(c.exprText, c.argsText);
-        console.log('[params-to-object] preparing replace in', c.filePath);
-        console.log('---orig---\n' + orig + '\n---repl---\n' + repl);
+        log('preparing replace in', c.filePath);
+        log('---orig---\n' + orig + '\n---repl---\n' + repl);
         edit.replace(uri, new vscode.Range(startPos, endPos), repl);
       }
       const ok = await vscode.workspace.applyEdit(edit);
-      console.log('[params-to-object] applyEdit result:', ok);
+      log('applyEdit result:', ok);
       for (const [fp, d] of docsToSave) {
         await d.save();
-        console.log('[params-to-object] saved', fp);
+        log('saved', fp);
         try {
           const afterText = d.getText();
           const expected = replByFile.get(fp);
-          console.log('[params-to-object] post-save buffer len:', afterText.length, 'contains expected repl?', expected ? afterText.indexOf(expected) >= 0 : 'no-expected-repl');
-        } catch (e) { console.log('[params-to-object] error reading buffer after save for', fp, e); }
+          log('post-save buffer len:', afterText.length, 'contains expected repl?', expected ? afterText.indexOf(expected) >= 0 : 'no-expected-repl');
+        } catch (e) { log('error reading buffer after save for', fp, e); }
       }
 
       const paramTypes = params.map((p: any) => {
@@ -314,11 +314,11 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const edit2 = new vscode.WorkspaceEdit();
         edit2.replace(uri, new vscode.Range(startPosReplace, endPosReplace), newFnText);
         const ok2 = await vscode.workspace.applyEdit(edit2);
-        console.log('[params-to-object] applied function text edit:', ok2);
+        log('applied function text edit:', ok2);
         await doc.save();
-        console.log('[params-to-object] saved', uri.fsPath);
+        log('saved', uri.fsPath);
       } catch (e) {
-        console.log('[params-to-object] error applying function text edit', e);
+        log('error applying function text edit', e);
       }
       if (originalEditor && originalSelection) await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
       void vscode.window.showInformationMessage(`Converted ${confirmed.length} call(s) and updated function.`);
@@ -331,7 +331,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       const key = f.start !== undefined && f.end !== undefined ? `${f.filePath}:${f.start}:${f.end}` : null;
       return !key || !confirmedSet.has(key);
     });
-    if (fuzzy.length !== initialFuzzyCount) console.log('[params-to-object] removed', initialFuzzyCount - fuzzy.length, 'fuzzy candidates that matched confirmed calls');
+    if (fuzzy.length !== initialFuzzyCount) log('removed', initialFuzzyCount - fuzzy.length, 'fuzzy candidates that matched confirmed calls');
     fuzzy.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     const highlightDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: 'rgba(255,255,0,0.4)' });
@@ -417,7 +417,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           }
         }
       } catch (e) {
-        console.log('[params-to-object] preview error', e);
+        log('preview error', e);
       }
     }
 
@@ -442,7 +442,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const startP = doc.positionAt(c.start);
         const endP = doc.positionAt(c.end);
         const replAll = buildReplacementAll(c.exprText, c.argsText);
-        console.log('[params-to-object] scheduling replace (all) in', c.filePath, 'range', c.start, c.end);
+        log('scheduling replace (all) in', c.filePath, 'range', c.start, c.end);
         editAll.replace(uri, new vscode.Range(startP, endP), replAll);
       } else if (c.filePath && typeof c.rangeStart === 'number') {
         const uri = vscode.Uri.file(c.filePath);
@@ -466,15 +466,15 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
 
     const ok2 = await vscode.workspace.applyEdit(editAll);
-    console.log('[params-to-object] applyEdit(all) result:', ok2);
+    log('applyEdit(all) result:', ok2);
     for (const [fp, d] of docsToSaveAll) {
       await d.save();
-      console.log('[params-to-object] saved', fp);
+      log('saved', fp);
       try {
         const afterText = d.getText();
         const expected = replAllMap.get(fp);
-        console.log('[params-to-object] post-save buffer len:', afterText.length, 'contains expected repl?', expected ? afterText.indexOf(expected) >= 0 : 'no-expected-repl');
-      } catch (e) { console.log('[params-to-object] error reading buffer after save for', fp, e); }
+        log('post-save buffer len:', afterText.length, 'contains expected repl?', expected ? afterText.indexOf(expected) >= 0 : 'no-expected-repl');
+      } catch (e) { log('error reading buffer after save for', fp, e); }
     }
 
     const paramTypes2 = params.map((p: any) => {
@@ -494,11 +494,11 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       const edit3 = new vscode.WorkspaceEdit();
       edit3.replace(uri2, new vscode.Range(startReplace2, endReplace2), newFnText2);
       const ok3 = await vscode.workspace.applyEdit(edit3);
-      console.log('[params-to-object] applied function text edit (all):', ok3);
+      log('applied function text edit (all):', ok3);
       await doc2.save();
-      console.log('[params-to-object] saved', uri2.fsPath);
+      log('saved', uri2.fsPath);
     } catch (e) {
-      console.log('[params-to-object] error applying function text edit (all)', e);
+      log('error applying function text edit (all)', e);
     }
 
     try { highlightDecoration.dispose(); } catch (e) { }
