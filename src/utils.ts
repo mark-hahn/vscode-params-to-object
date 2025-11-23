@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as utils  from './utils';
 const { log, start, end } = getLog('cmds');
 
-const outputChannel = vscode.window.createOutputChannel('paramsToObject');
+const outputChannel = vscode.window.createOutputChannel('objectifyParams');
 
 export function getLog(module: string) : {
   log:   (...args: any[]) => void;

@@ -8,10 +8,10 @@ export function activate(context: vscode.ExtensionContext) {
   start('activation');
 
   const convertCommandHandler = vscode.commands.registerCommand(
-      'paramsToObject.convert', commands.convertCommandHandler);
+      'objectifyParams.convert', commands.convertCommandHandler);
 
   const checkFunctions = vscode.commands.registerCommand(
-       'paramsToObject.checkFunctions', functions.checkFunctionsCommandHandler);
+       'objectifyParams.checkFunctions', functions.checkFunctionsCommandHandler);
 
   context.subscriptions.push(convertCommandHandler, checkFunctions);
 

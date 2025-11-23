@@ -26,7 +26,7 @@ export function checkFunctionsCommandHandler(): void {
 
   try {
     const project = new Project({ tsConfigFilePath: undefined, compilerOptions: { allowJs: true, checkJs: false } });
-    const cfg = vscode.workspace.getConfiguration('paramsToObject');
+    const cfg = vscode.workspace.getConfiguration('objectifyParams');
     const includeStr = (cfg.get('include') as string) || '**/*.ts **/*.js';
     const excludeStr = (cfg.get('exclude') as string) || '**/node_modules/**';
     const includePatterns = includeStr.split(/\s+/).filter(Boolean);

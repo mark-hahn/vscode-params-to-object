@@ -40,7 +40,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     });
 
     // Read include/exclude globs from configuration (space-separated strings)
-    const cfg = vscode.workspace.getConfiguration('paramsToObject');
+    const cfg = vscode.workspace.getConfiguration('objectifyParams');
     const includeStr = (cfg.get('include') as string) || '**/*.ts **/*.js';
     const excludeStr = (cfg.get('exclude') as string) || '**/node_modules/**';
     const includePatterns = includeStr.split(/\s+/).filter(Boolean);

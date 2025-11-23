@@ -1,6 +1,6 @@
 {
   "name": "params-to-object",
-  "displayName": "Params To Object",
+  "displayName": "Objectify Params",
   "description": "VS Code extension to convert function params into objects.",
   "version": "0.0.1",
   "publisher": "eridien",
@@ -14,11 +14,11 @@
   "contributes": {
     "commands": [
       {
-        "command": "paramsToObject.convert",
+        "command": "objectifyParams.convert",
         "title": "Convert params to object"
       },
       {
-        "command": "paramsToObject.checkFunctions",
+        "command": "objectifyParams.checkFunctions",
         "title": "Check functions for reliable refactor"
       }
     ],
@@ -26,12 +26,12 @@
       "type": "object",
       "title": "Params to Object",
       "properties": {
-        "paramsToObject.include": {
+        "objectifyParams.include": {
           "type": "string",
           "default": "**/*.ts **/*.js",
           "description": "Space-separated glob patterns of files to include when scanning (use common glob format)."
         },
-        "paramsToObject.exclude": {
+        "objectifyParams.exclude": {
           "type": "string",
           "default": "**/node_modules/**",
           "description": "Space-separated glob patterns of files/folders to exclude when scanning."
