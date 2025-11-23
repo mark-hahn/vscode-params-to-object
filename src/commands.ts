@@ -146,7 +146,6 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     const confirmed: any[] = [];
     let fuzzy: any[] = [];
-    let fatalConflict: any = null;
 
     const files = project.getSourceFiles();
     log('scanning', files.length, 'source files (node_modules excluded where possible)');
@@ -179,7 +178,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           try {
             const fnId = resolvedTarget.getFullyQualifiedName ? resolvedTarget.getFullyQualifiedName() : resolvedTarget.getEscapedName && resolvedTarget.getEscapedName();
             const callId = resolvedCalled.getFullyQualifiedName ? resolvedCalled.getFullyQualifiedName() : resolvedCalled.getEscapedName && resolvedCalled.getEscapedName();
-            if (fnId === callId) {
+            
+            // Only check for collision if we have valid IDs to compare
+            const canCompare = fnId && callId;
+            const isMatch = canCompare && fnId === callId;
+            const isCollision = canCompare && fnId !== callId;
+            
+            if (isMatch || !canCompare) {
               const args = call.getArguments();
               const argsText = args.map((a: any) => a ? a.getText() : 'undefined');
               if (argsText.length === 1 && typeof argsText[0] === 'string' && argsText[0].trim().startsWith('{')) {
@@ -196,9 +201,58 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
                   }
                 }
               }
-            } else {
-              fatalConflict = { file: sf.getFilePath(), callText: call.getText(), resolved: callId, target: fnId };
-              break;
+            } else if (isCollision) {
+              // Show name collision warning
+              const conflictFile = sf.getFilePath();
+              log('Name collision detected in', conflictFile);
+              
+              try {
+                const doc = await vscode.workspace.openTextDocument(conflictFile);
+                const callStartPos = doc.positionAt(call.getStart());
+                const callEndPos = doc.positionAt(call.getEnd());
+                
+                await vscode.window.showTextDocument(doc, { preview: true });
+                const tempEditor = vscode.window.activeTextEditor;
+                
+                if (tempEditor) {
+                  const topLine = Math.max(0, callStartPos.line - 5);
+                  const topPos = new vscode.Position(topLine, 0);
+                  tempEditor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
+                  
+                  const highlightDecoration = vscode.window.createTextEditorDecorationType({ 
+                    backgroundColor: 'rgba(255,100,100,0.3)',
+                    border: '1px solid rgba(255,100,100,0.8)'
+                  });
+                  tempEditor.setDecorations(highlightDecoration, [new vscode.Range(callStartPos, callEndPos)]);
+                  
+                  const choice = await vscode.window.showWarningMessage(
+                    `⚠️ Name collision detected\n\nFound a call to "${fnName}" in:\n${conflictFile}\n\nThis call resolves to a different function than the one you're converting. This often happens when:\n• Scanning compiled JavaScript output\n• Multiple functions share the same name\n• Import aliases create ambiguity\n\nThis call will be ignored.`,
+                    { modal: true },
+                    'Continue Scanning',
+                    'Cancel Scanning'
+                  );
+                  
+                  highlightDecoration.dispose();
+                  
+                  // Restore original editor
+                  if (originalEditor) {
+                    await vscode.window.showTextDocument(originalEditor.document, { 
+                      selection: originalSelection, 
+                      preserveFocus: false 
+                    });
+                  }
+                  
+                  if (choice === 'Cancel Scanning') {
+                    log('User cancelled scanning due to name collision');
+                    return;
+                  }
+                }
+              } catch (e) {
+                log('Error showing collision warning', e);
+              }
+              
+              // Continue scanning instead of breaking
+              continue;
             }
           } catch (e) {
             const args = call.getArguments();
@@ -211,7 +265,6 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           fuzzy.push({ filePath: sf.getFilePath(), start: call.getStart(), end: call.getEnd(), exprText: expr.getText(), argsText, reason: 'unresolved', score: expr.getKind() === SyntaxKind.PropertyAccessExpression ? 8 : 4 });
         }
       }
-      if (fatalConflict) break;
     }
 
     // Also search .vue files in workspace for template calls (simple textual search)
@@ -235,11 +288,6 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const line = before.split('\n').length;
         fuzzy.push({ filePath: vf, rangeStart: idx, rangeEnd: idx + fnName.length, text: txt.substr(idx, 200), reason: 'vue-template', score: 9, argsText: null });
       }
-    }
-
-    if (fatalConflict) {
-      void vscode.window.showInformationMessage(`Cannot process: found call resolved to a different symbol in ${fatalConflict.file}`);
-      return;
     }
 
     const safeSerial = (arr: any[]) => arr.map(c => ({ filePath: c.filePath, start: c.start, end: c.end, exprText: c.exprText, argsText: c.argsText, reason: c.reason }));
