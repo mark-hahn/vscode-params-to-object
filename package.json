@@ -1,9 +1,9 @@
 {
   "name": "params-to-object",
-  "displayName": "Params-to-Object",
-  "description": "Simple VS Code extension that logs hello world on activation.",
+  "displayName": "Params To Object",
+  "description": "VS Code extension to convert function params into objects.",
   "version": "0.0.1",
-  "publisher": "mark",
+  "publisher": "eridien",
   "engines": {
     "vscode": "^1.50.0"
   },
