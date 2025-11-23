@@ -15,7 +15,7 @@
     "commands": [
       {
         "command": "objectifyParams.convert",
-        "title": "Convert params to object"
+        "title": "Convert function params into an object"
       },
       {
         "command": "objectifyParams.checkFunctions",
@@ -24,7 +24,7 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "Params to Object",
+      "title": "Objectify Params",
       "properties": {
         "objectifyParams.include": {
           "type": "string",
