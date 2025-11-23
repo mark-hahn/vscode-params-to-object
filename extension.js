@@ -413,7 +413,7 @@ function activate(context) {
               targetEditor.setDecorations(highlightDecoration, [callRange]);
 
               // wait 5s
-              await new Promise(r => setTimeout(r, 5000));
+              await new Promise(r => setTimeout(r, 1000));
 
               // undo the temporary call edit and restore selections/visible ranges
               await vscode.commands.executeCommand('undo');
