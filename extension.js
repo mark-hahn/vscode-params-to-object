@@ -28,7 +28,14 @@ function activate(context) {
     const cursorOffset = editor.document.offsetAt(editor.selection.active);
 
     try {
-      const project = new Project({tsConfigFilePath: undefined});
+      const project = new Project({
+        tsConfigFilePath: undefined,
+        compilerOptions: {
+          allowJs: true,
+          checkJs: false,
+          moduleResolution: 'node'
+        }
+      });
 
       // Add project files (JS/TS) from workspace, exclude node_modules — use glob to avoid scanning node_modules
       const glob = require('glob');
@@ -534,7 +541,14 @@ function activate(context) {
     const filePath = editor.document.fileName;
 
     try {
-      const project = new Project({tsConfigFilePath: undefined});
+      const project = new Project({
+        tsConfigFilePath: undefined,
+        compilerOptions: {
+          allowJs: true,
+          checkJs: false,
+          moduleResolution: 'node'
+        }
+      });
       const glob = require('glob');
       const cfg = vscode.workspace.getConfiguration('paramsToObject');
       const includeStr = cfg.get('include') || '**/*.ts **/*.js';
