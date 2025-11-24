@@ -775,10 +775,53 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         edit2.replace(uri, new vscode.Range(startPosReplace, endPosReplace), newFnText);
         const ok2 = await vscode.workspace.applyEdit(edit2);
         log('applied function text edit:', ok2);
+        
+        // Calculate the range of the updated function signature for highlighting (just the first line)
+        // Find the closing paren after the parameters
+        let parenDepth = 0;
+        let signatureEnd = 0;
+        for (let i = 0; i < newFnText.length; i++) {
+          if (newFnText[i] === '(') parenDepth++;
+          if (newFnText[i] === ')') {
+            parenDepth--;
+            if (parenDepth === 0) {
+              // Find the end of the return type or the opening brace
+              const remaining = newFnText.substring(i + 1);
+              const braceIdx = remaining.indexOf('{');
+              signatureEnd = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
+              break;
+            }
+          }
+        }
+        if (signatureEnd === 0) signatureEnd = newFnText.indexOf('{');
+        if (signatureEnd <= 0) signatureEnd = newFnText.length;
+        
+        const newSignatureEndPos = idx >= 0 ? doc.positionAt(idx + signatureEnd) : doc.positionAt(targetStart + signatureEnd);
+        const functionRange = new vscode.Range(startPosReplace, newSignatureEndPos);
+        
+        log('Highlighting function definition, range:', functionRange, 'highlightDelay:', highlightDelay);
+        
+        if (originalEditor && originalSelection) {
+          await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
+          
+          // Highlight the converted function definition
+          if (highlightDelay > 0) {
+            const highlightColor = confirmed.length > 0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.3)';
+            log('Creating decoration with color:', highlightColor);
+            const defDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: highlightColor });
+            const currentEditor = vscode.window.activeTextEditor;
+            if (currentEditor) {
+              currentEditor.setDecorations(defDecoration, [functionRange]);
+              log('Decoration applied, waiting for', highlightDelay, 'ms');
+              await new Promise(r => setTimeout(r, highlightDelay));
+              log('Disposing decoration');
+              defDecoration.dispose();
+            }
+          }
+        }
       } catch (e) {
         log('error applying function text edit', e);
       }
-      if (originalEditor && originalSelection) await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
       if (confirmed.length > 0) {
         void vscode.window.showInformationMessage(`Objectify Params: Converted ${confirmed.length} call(s) and updated function.`);
       } else {
@@ -1293,12 +1336,51 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       edit3.replace(uri2, new vscode.Range(startReplace2, endReplace2), newFnText2);
       const ok3 = await vscode.workspace.applyEdit(edit3);
       log('applied function text edit (all):', ok3);
+      
+      // Calculate the range of the updated function signature for highlighting (just the first line)
+      // Find the closing paren after the parameters
+      let parenDepth2 = 0;
+      let signatureEnd2 = 0;
+      for (let i = 0; i < newFnText2.length; i++) {
+        if (newFnText2[i] === '(') parenDepth2++;
+        if (newFnText2[i] === ')') {
+          parenDepth2--;
+          if (parenDepth2 === 0) {
+            // Find the end of the return type or the opening brace
+            const remaining = newFnText2.substring(i + 1);
+            const braceIdx = remaining.indexOf('{');
+            signatureEnd2 = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
+            break;
+          }
+        }
+      }
+      if (signatureEnd2 === 0) signatureEnd2 = newFnText2.indexOf('{');
+      if (signatureEnd2 <= 0) signatureEnd2 = newFnText2.length;
+      
+      const newSignatureEndPos2 = idx2 >= 0 ? doc2.positionAt(idx2 + signatureEnd2) : doc2.positionAt(targetStart + signatureEnd2);
+      const functionRange2 = new vscode.Range(startReplace2, newSignatureEndPos2);
+      
+      try { highlightDecoration.dispose(); } catch (e) { }
+      if (originalEditor && originalSelection) {
+        await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
+        
+        // Highlight the converted function definition
+        if (highlightDelay > 0) {
+          const totalConverted = confirmed.length + acceptedFuzzy.length;
+          const highlightColor = totalConverted > 0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.3)';
+          const defDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: highlightColor });
+          const currentEditor = vscode.window.activeTextEditor;
+          if (currentEditor) {
+            currentEditor.setDecorations(defDecoration, [functionRange2]);
+            await new Promise(r => setTimeout(r, highlightDelay));
+            defDecoration.dispose();
+          }
+        }
+      }
     } catch (e) {
       log('error applying function text edit (all)', e);
     }
 
-    try { highlightDecoration.dispose(); } catch (e) { }
-    if (originalEditor && originalSelection) await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
     void vscode.window.showInformationMessage(`Objectify Params: Converted ${confirmed.length + acceptedFuzzy.length} call(s) and updated function.`);
   } catch (err) {
     console.error(err);
