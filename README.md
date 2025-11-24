@@ -102,6 +102,11 @@ Access settings via **File > Preferences > Settings** and search for "Objectify 
 
 MIT
 
+## Links
+
+- [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=eridien.objectify-params)
+- [GitHub Repository](https://github.com/mark-hahn/vscode-params-to-object)
+
 ## Contributing
 
-Issues and pull requests welcome at the project repository.
+Issues and pull requests welcome at the [GitHub repository](https://github.com/mark-hahn/vscode-params-to-object).
