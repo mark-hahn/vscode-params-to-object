@@ -18,6 +18,15 @@
         "title": "Convert function params into an object"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "objectifyParams.convert",
+          "group": "1_modification",
+          "when": "resourceExtname == .ts || resourceExtname == .js || resourceExtname == .tsx || resourceExtname == .jsx || resourceExtname == .vue || resourceExtname == .svelte || resourceExtname == .mjs || resourceExtname == .cjs || resourceExtname == .mts || resourceExtname == .cts"
+        }
+      ]
+    },
     "configuration": {
       "type": "object",
       "title": "Objectify Params",
