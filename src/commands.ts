@@ -54,6 +54,21 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
 
     if (!targetFunction) {
+      // check class methods
+      const classes = sourceFile.getClasses();
+      for (const cls of classes) {
+        const methods = cls.getMethods();
+        for (const method of methods) {
+          if (method.getStart() <= cursorOffset && cursorOffset <= method.getEnd()) {
+            targetFunction = method;
+            break;
+          }
+        }
+        if (targetFunction) break;
+      }
+    }
+
+    if (!targetFunction) {
       void vscode.window.showInformationMessage('Not on a function.');
       return;
     }
