@@ -40,15 +40,6 @@ export async function createProjectFromConfig(
   }
 
   const jsTsFiles = Array.from(foundSet);
-  log('workspaceRoot:', workspaceRoot);
-  log(
-    'includePatterns:',
-    includePatterns,
-    'excludePatterns:',
-    excludePatterns,
-    'found files:',
-    jsTsFiles.length
-  );
 
   if (jsTsFiles.length > 0) {
     project.addSourceFilesAtPaths(jsTsFiles);

@@ -215,8 +215,6 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
   if (!context) return;
 
   const { editor, workspaceRoot, filePath } = context;
-  log('activeFile:', filePath);
-  log('chosen workspaceRoot:', workspaceRoot);
 
   const originalEditor = vscode.window.activeTextEditor;
   const originalSelection = originalEditor
