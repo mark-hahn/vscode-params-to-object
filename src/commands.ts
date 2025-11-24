@@ -531,8 +531,84 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       log('fuzzy examples:', fuzzy.slice(0, 10));
     }
 
+    // If no calls found, still convert the function signature
     if (confirmed.length === 0 && fuzzy.length === 0) {
-      void vscode.window.showInformationMessage(`No calls to ${fnName} were found in the workspace.`);
+      log('No calls found, converting function signature only');
+      
+      // Get types and build the converted signature
+      const isTypeScript = sourceFile.getFilePath().endsWith('.ts') || sourceFile.getFilePath().endsWith('.tsx');
+      const paramTypes = params.map((p: any) => {
+        if (isRestParameter && restTupleElements.length > 0) {
+          const typeNode = p.getTypeNode();
+          if (typeNode) {
+            const typeText = typeNode.getText();
+            const tupleMatch = typeText.match(/\[([^\]]+)\]/);
+            if (tupleMatch) {
+              const elements = tupleMatch[1].split(',').map((e: string) => e.trim());
+              return elements.map((e: string) => {
+                const colonIndex = e.indexOf(':');
+                return colonIndex > 0 ? e.substring(colonIndex + 1).trim() : 'any';
+              });
+            }
+          }
+          return restTupleElements.map(() => 'any');
+        }
+        const typeNode = p.getTypeNode && p.getTypeNode();
+        if (typeNode) return typeNode.getText();
+        const pType = p.getType && p.getType();
+        return pType ? pType.getText() : 'any';
+      });
+
+      let paramTypeText = '';
+      if (isTypeScript) {
+        if (isRestParameter) {
+          const flatTypes = paramTypes.flat();
+          paramTypeText = `{ ${paramNames.map((n: string, i: number) => {
+            const param = params[0];
+            const isOptional = param && param.hasQuestionToken && param.hasQuestionToken();
+            const optionalMark = isOptional ? '?' : '';
+            return `${n}${optionalMark}: ${flatTypes[i] || 'any'}`;
+          }).join('; ')} }`;
+        } else {
+          paramTypeText = `{ ${paramNames.map((n: string, i: number) => {
+            const param = params[i];
+            const isOptional = param && param.hasQuestionToken && param.hasQuestionToken();
+            const optionalMark = isOptional ? '?' : '';
+            return `${n}${optionalMark}: ${paramTypes[i] || 'any'}`;
+          }).join('; ')} }`;
+        }
+      }
+
+      const newFnText = transformFunctionText(originalFunctionText, paramNames, paramTypeText, isTypeScript);
+      
+      const edit = new vscode.WorkspaceEdit();
+      const uri = vscode.Uri.file(filePath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const startPos = doc.positionAt(targetStart);
+      const endPos = doc.positionAt(targetEnd);
+      edit.replace(uri, new vscode.Range(startPos, endPos), newFnText);
+      
+      const success = await vscode.workspace.applyEdit(edit);
+      if (success) {
+        // Flash the converted function for 1 second
+        if (originalEditor) {
+          await vscode.window.showTextDocument(originalEditor.document, { 
+            selection: new vscode.Selection(startPos, doc.positionAt(targetStart + newFnText.length)),
+            preserveFocus: false 
+          });
+          
+          const flashDecoration = vscode.window.createTextEditorDecorationType({
+            backgroundColor: 'rgba(100,255,100,0.3)',
+            border: '1px solid rgba(100,255,100,0.8)'
+          });
+          
+          originalEditor.setDecorations(flashDecoration, [new vscode.Range(startPos, doc.positionAt(targetStart + newFnText.length))]);
+          await new Promise(r => setTimeout(r, 1000));
+          flashDecoration.dispose();
+        }
+        
+        void vscode.window.showInformationMessage(`Updated function signature (no calls found in workspace).`);
+      }
       return;
     }
 
