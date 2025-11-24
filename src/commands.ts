@@ -310,17 +310,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
                   tempEditor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
                   
                   const highlightDecoration = vscode.window.createTextEditorDecorationType({ 
-                    backgroundColor: 'rgba(255,200,100,0.3)',
-                    border: '1px solid rgba(255,200,100,0.8)'
+                    backgroundColor: 'rgba(255,100,100,0.3)',
+                    border: '1px solid rgba(255,100,100,0.8)'
                   });
                   tempEditor.setDecorations(highlightDecoration, [new vscode.Range(callStartPos, callEndPos)]);
                   
                   const response = await vscode.window.showWarningMessage(
-                    `Objectify Params\n\n⚠️ Cannot convert function\n\n` +
-                    `Found usage with .${propName}() at:\n` +
-                    `${path.basename(conflictFile)}:${callStartPos.line + 1}\n\n` +
-                    `The .call(), .apply(), and .bind() methods are incompatible with object parameters.\n\n` +
-                    `Expression: ${exprText}`,
+                    `Objectify Params: Cannot convert function.\n\ncall/apply/bind methods are not supported.`,
                     { modal: true }
                   );
                   
@@ -363,17 +359,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               tempEditor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
               
               const highlightDecoration = vscode.window.createTextEditorDecorationType({ 
-                backgroundColor: 'rgba(255,200,100,0.3)',
-                border: '1px solid rgba(255,200,100,0.8)'
+                backgroundColor: 'rgba(255,100,100,0.3)',
+                border: '1px solid rgba(255,100,100,0.8)'
               });
               tempEditor.setDecorations(highlightDecoration, [new vscode.Range(callStartPos, callEndPos)]);
               
               const response = await vscode.window.showWarningMessage(
-                `⚠️ Cannot convert function\n\n` +
-                `Found usage with .call(), .apply(), or .bind() at:\n` +
-                `${path.basename(conflictFile)}:${callStartPos.line + 1}\n\n` +
-                `These methods pass arguments positionally and would break after conversion to object parameters.\n\n` +
-                `Expression: ${exprText}`,
+                `Objectify Params: Cannot convert function.\n\ncall/apply/bind methods are not supported.`,
                 { modal: true },
                 'Cancel Scanning'
               );
