@@ -48,10 +48,10 @@
         },
         "objectifyParams.highlightDelay": {
           "type": "number",
-          "default": 1000,
+          "default": 500,
           "minimum": 0,
           "maximum": 5000,
-          "description": "Delay in milliseconds for preview highlighting behavior."
+          "description": "Time in milliseconds to show preview highlighting. Zero means no preview."
         }
       }
     }
