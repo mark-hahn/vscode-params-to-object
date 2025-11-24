@@ -165,7 +165,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         );
         
         if (choice !== 'Continue') {
-          void vscode.window.showInformationMessage('Objectify Params: Operation cancelled.');
+          void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
           return;
         }
       } else {
@@ -487,6 +487,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     // Get monitor conversions setting early as it's used in multiple places
     const monitorConversions = cfg.get('monitorConversions') as boolean;
+    const highlightDelay = (cfg.get('highlightDelay') as number) || 1000;
 
     // If no calls found, still convert the function signature
     if (confirmed.length === 0 && fuzzy.length === 0) {
@@ -550,7 +551,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         // Flash the converted function for 1 second
         if (originalEditor) {
           await vscode.window.showTextDocument(originalEditor.document, { 
-            selection: new vscode.Selection(startPos, doc.positionAt(targetStart + newFnText.length)),
+            selection: new vscode.Selection(startPos, startPos),
             preserveFocus: false 
           });
           
@@ -560,7 +561,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           });
           
           originalEditor.setDecorations(flashDecoration, [new vscode.Range(startPos, doc.positionAt(targetStart + newFnText.length))]);
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, highlightDelay));
           flashDecoration.dispose();
         }
         
@@ -586,8 +587,8 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const yellowDecoration = vscode.window.createTextEditorDecorationType({ 
           backgroundColor: 'rgba(255,255,0,0.4)'
         });
-        const redDecoration = vscode.window.createTextEditorDecorationType({ 
-          backgroundColor: 'rgba(255,100,100,0.3)'
+        const greenDecoration = vscode.window.createTextEditorDecorationType({ 
+          backgroundColor: 'rgba(100,255,100,0.3)'
         });
         
         let callIdx = 0;
@@ -618,9 +619,9 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
                 'Cancel'
               );
               
-              await new Promise(r => setTimeout(r, 1000));
+              await new Promise(r => setTimeout(r, highlightDelay));
               
-              // Switch to preview in light red
+              // Switch to preview in light green (will convert)
               const repl = buildReplacement(c.exprText, c.argsText);
               await editor.edit(editBuilder => {
                 editBuilder.replace(new vscode.Range(startPos, endPos), repl);
@@ -628,17 +629,17 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               
               const newEndPos = doc.positionAt(c.start + repl.length);
               editor.setDecorations(yellowDecoration, []);
-              editor.setDecorations(redDecoration, [new vscode.Range(startPos, newEndPos)]);
+              editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
               
               const choice = await dialogPromise;
               
               // Undo the preview
               await vscode.commands.executeCommand('undo');
-              editor.setDecorations(redDecoration, []);
+              editor.setDecorations(greenDecoration, []);
               
               if (choice === 'Cancel') {
                 yellowDecoration.dispose();
-                redDecoration.dispose();
+                greenDecoration.dispose();
                 void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
                 if (originalEditor && originalSelection) {
                   await vscode.window.showTextDocument(originalEditor.document, { 
@@ -655,7 +656,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         }
         
         yellowDecoration.dispose();
-        redDecoration.dispose();
+        greenDecoration.dispose();
       }
       
       const edit = new vscode.WorkspaceEdit();
@@ -767,8 +768,8 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       const yellowDecoration = vscode.window.createTextEditorDecorationType({ 
         backgroundColor: 'rgba(255,255,0,0.4)'
       });
-      const redDecoration = vscode.window.createTextEditorDecorationType({ 
-        backgroundColor: 'rgba(255,100,100,0.3)'
+      const greenDecoration = vscode.window.createTextEditorDecorationType({ 
+        backgroundColor: 'rgba(100,255,100,0.3)'
       });
       
       let callIdx = 0;
@@ -799,9 +800,9 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               'Cancel'
             );
             
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, highlightDelay));
             
-            // Switch to preview in light red
+            // Switch to preview in light green (will convert)
             const repl = buildReplacement(c.exprText, c.argsText);
             await editor.edit(editBuilder => {
               editBuilder.replace(new vscode.Range(startPos, endPos), repl);
@@ -809,17 +810,17 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
             
             const newEndPos = doc.positionAt(c.start + repl.length);
             editor.setDecorations(yellowDecoration, []);
-            editor.setDecorations(redDecoration, [new vscode.Range(startPos, newEndPos)]);
+            editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
             
             const choice = await dialogPromise;
             
             // Undo the preview
             await vscode.commands.executeCommand('undo');
-            editor.setDecorations(redDecoration, []);
+            editor.setDecorations(greenDecoration, []);
             
             if (choice === 'Cancel') {
               yellowDecoration.dispose();
-              redDecoration.dispose();
+              greenDecoration.dispose();
               void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
               if (originalEditor && originalSelection) {
                 await vscode.window.showTextDocument(originalEditor.document, { 
@@ -836,10 +837,12 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       }
       
       yellowDecoration.dispose();
-      redDecoration.dispose();
+      greenDecoration.dispose();
     }
 
     const highlightDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: 'rgba(255,255,0,0.4)' });
+    const greenDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: 'rgba(100,255,100,0.3)' });
+    const redDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: 'rgba(255,100,100,0.3)' });
     const totalCalls = confirmed.length + fuzzy.length;
     const totalFuzzy = fuzzy.length;
     let callIdx = confirmed.length; // Start after confirmed calls
@@ -934,6 +937,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       
       let choice: string | undefined;
       if (willLoseArgs) {
+        // Change to red (won't convert)
+        let currentEditor = vscode.window.activeTextEditor;
+        if (currentEditor && startPos && endPos) {
+          currentEditor.setDecorations(highlightDecoration, []);
+          currentEditor.setDecorations(redDecoration, [new vscode.Range(startPos, endPos)]);
+        }
+        
         choice = await vscode.window.showWarningMessage(
           `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.\n\n` +
           `⚠️ Argument count mismatch\n\n` +
@@ -946,8 +956,11 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           'Cancel Scanning'
         );
         
-        const currentEditor = vscode.window.activeTextEditor;
-        if (currentEditor) currentEditor.setDecorations(highlightDecoration, []);
+        currentEditor = vscode.window.activeTextEditor;
+        if (currentEditor) {
+          currentEditor.setDecorations(highlightDecoration, []);
+          currentEditor.setDecorations(redDecoration, []);
+        }
         
         if (choice === 'Cancel Scanning') {
           highlightDecoration.dispose();
@@ -965,13 +978,30 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           'Valid',
           'Invalid'
         );
+        
+        // Change color based on choice
+        const currentEditor = vscode.window.activeTextEditor;
+        if (currentEditor && startPos && endPos) {
+          currentEditor.setDecorations(highlightDecoration, []);
+          if (choice === 'Valid') {
+            // Green for will convert
+            currentEditor.setDecorations(greenDecoration, [new vscode.Range(startPos, endPos)]);
+          } else {
+            // Red for won't convert
+            currentEditor.setDecorations(redDecoration, [new vscode.Range(startPos, endPos)]);
+          }
+        }
+        
+        // Preview for highlightDelay before continuing
+        await new Promise(r => setTimeout(r, highlightDelay));
+        
         if (choice !== 'Valid') {
-          const currentEditor = vscode.window.activeTextEditor;
-          if (currentEditor) currentEditor.setDecorations(highlightDecoration, []);
-          highlightDecoration.dispose();
-          void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
-          if (originalEditor && originalSelection) await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
-          return;
+          if (currentEditor) {
+            currentEditor.setDecorations(greenDecoration, []);
+            currentEditor.setDecorations(redDecoration, []);
+          }
+          // Skip this call and continue with the rest
+          continue;
         }
       }
 
@@ -1003,12 +1033,15 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
             const priorSelections = targetEditor.selections.slice();
             const priorVisibleRanges = targetEditor.visibleRanges.slice();
             try { targetEditor.setDecorations(highlightDecoration, []); } catch (e) { }
+            try { targetEditor.setDecorations(greenDecoration, []); } catch (e) { }
             await targetEditor.edit(editBuilder => { editBuilder.replace(new vscode.Range(startP, endP), repl); });
             const callRange = new vscode.Range(startP, doc.positionAt(candidate.start + repl.length));
-            targetEditor.setDecorations(highlightDecoration, [callRange]);
-            await new Promise(r => setTimeout(r, 1000));
+            targetEditor.setDecorations(greenDecoration, [callRange]);
+            await new Promise(r => setTimeout(r, highlightDelay));
             await vscode.commands.executeCommand('undo');
             try { targetEditor.setDecorations(highlightDecoration, []); } catch (e) { }
+            try { targetEditor.setDecorations(greenDecoration, []); } catch (e) { }
+            try { targetEditor.setDecorations(redDecoration, []); } catch (e) { }
             try { targetEditor.selections = priorSelections; } catch (e) { }
             try { if (priorVisibleRanges && priorVisibleRanges.length) targetEditor.revealRange(priorVisibleRanges[0], vscode.TextEditorRevealType.Default); } catch (e) { }
           } else {
