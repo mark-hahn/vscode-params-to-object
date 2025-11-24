@@ -628,7 +628,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               
               // Show dialog
               const choice = await vscode.window.showInformationMessage(
-                `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.`,
+                `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
                 { modal: true },
                 'Next'
               );
@@ -846,7 +846,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
             tempEditor.setDecorations(collisionDecoration, [new vscode.Range(callStartPos, callEndPos)]);
             
             const choice = await vscode.window.showWarningMessage(
-              `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.\nName collision detected. This call will not be converted.`,
+              `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.\n\nName collision detected. This call will not be converted.`,
               { modal: true },
               'Continue'
             );
@@ -921,11 +921,10 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         }
         
         choice = await vscode.window.showWarningMessage(
-          `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.\n\n` +
-          `⚠️ Argument count mismatch\n\n` +
-          `This call has ${argCount} argument(s) but the function has ${paramNames.length} parameter(s).\n\n` +
-          `Converting would lose ${argCount - paramNames.length} argument(s):\n` +
-          `${candidate.argsText?.slice(paramNames.length).join(', ')}\n\n` +
+          `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.\n\n` +
+          `Argument count mismatch. This call has ${argCount} argument(s) but the function has ${paramNames.length} parameter(s). ` +
+          `Converting would lose ${argCount - paramNames.length} argument(s): ` +
+          `${candidate.argsText?.slice(paramNames.length).join(', ')}. ` +
           `This function cannot be converted safely.`,
           { modal: true },
           'Skip This Call'
@@ -950,7 +949,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         continue;
       } else {
         choice = await vscode.window.showInformationMessage(
-          `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.\n\nIs this a call to the correct function? Should it be converted?`,
+          `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.\n\nIs this a call to the correct function? Should it be converted?`,
           { modal: true },
           'Convert',
           'Skip'
@@ -1103,7 +1102,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               
               // Show dialog
               const choice = await vscode.window.showInformationMessage(
-                `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.`,
+                `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
                 { modal: true },
                 'Next'
               );
@@ -1134,7 +1133,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
               
               // Show dialog
               const choice = await vscode.window.showInformationMessage(
-                `Objectify Params\n\nProcessing function call ${callIdx} of ${totalCalls}.`,
+                `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
                 { modal: true },
                 'Next'
               );
