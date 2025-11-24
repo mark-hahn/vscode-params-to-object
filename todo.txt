@@ -1,7 +1,6 @@
 bugs...
 
 todo ...
-  check mixing js and ts
   add detailed explanations to the dialog
   test arrow-functions
 

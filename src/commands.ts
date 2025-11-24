@@ -31,6 +31,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     // Find function declaration or function expression at cursor
     let targetFunction: any = null;
+    let targetVariableDeclaration: any = null;
     const functions = sourceFile.getFunctions();
     for (const f of functions) {
       if (f.getStart() <= cursorOffset && cursorOffset <= f.getEnd()) {
@@ -46,8 +47,15 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const init = v.getInitializer && v.getInitializer();
         if (!init) continue;
         const kind = init.getKind && init.getKind();
-        if ((kind === SyntaxKind.ArrowFunction || kind === SyntaxKind.FunctionExpression) && init.getStart() <= cursorOffset && cursorOffset <= init.getEnd()) {
+        const isFunction = kind === SyntaxKind.ArrowFunction || kind === SyntaxKind.FunctionExpression;
+        if (!isFunction) continue;
+        
+        // Check if cursor is on the variable name or anywhere in the function
+        const varStart = v.getStart();
+        const varEnd = v.getEnd();
+        if (varStart <= cursorOffset && cursorOffset <= varEnd) {
           targetFunction = init;
+          targetVariableDeclaration = v;
           break;
         }
       }
@@ -87,7 +95,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
 
     const paramNames = params.map((p: any) => p.getName());
-    const fnName = targetFunction.getName ? targetFunction.getName() : null;
+    let fnName = targetFunction.getName ? targetFunction.getName() : null;
+    
+    // If arrow function or function expression assigned to variable, get name from variable
+    if (!fnName && targetVariableDeclaration) {
+      fnName = targetVariableDeclaration.getName();
+    }
+    
     const targetStart = targetFunction.getStart();
     const targetEnd = targetFunction.getEnd();
     const originalFunctionText = targetFunction.getText();
@@ -154,7 +168,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     // Resolve target symbol
     const typeChecker = project.getTypeChecker();
-    const targetSym = targetFunction.getSymbol && targetFunction.getSymbol();
+    let targetSym = targetFunction.getSymbol && targetFunction.getSymbol();
+    
+    // For arrow functions/function expressions in variables, get symbol from the variable
+    if (!targetSym && targetVariableDeclaration) {
+      targetSym = targetVariableDeclaration.getSymbol && targetVariableDeclaration.getSymbol();
+    }
+    
     const resolvedTarget = targetSym && (targetSym.getAliasedSymbol ? (targetSym.getAliasedSymbol() || targetSym) : targetSym);
     if (!resolvedTarget) {
       void vscode.window.showInformationMessage('Cannot resolve symbol for the selected function — aborting.');
