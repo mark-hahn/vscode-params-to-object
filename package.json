@@ -1,7 +1,7 @@
 {
-  "name": "params-to-object",
+  "name": "objectify-params",
   "displayName": "Objectify Params",
-  "description": "VS Code extension to convert function params into objects.",
+  "description": "VS Code extension to convert function parameters into objects.",
   "version": "0.0.1",
   "publisher": "eridien",
   "engines": {
