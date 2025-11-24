@@ -8,6 +8,182 @@ import * as parse from './parse';
 
 const { log } = utils.getLog('cmds');
 
+// Helper function to monitor and show confirmed calls
+async function monitorConfirmedCalls(
+  confirmed: any[],
+  totalCalls: number,
+  startIdx: number,
+  paramNames: string[],
+  highlightDelay: number,
+  originalEditor: vscode.TextEditor | undefined,
+  originalSelection: vscode.Selection | undefined
+): Promise<boolean> {
+  const buildReplacement = (exprText: string, argsTextArr: string[]) => {
+    const props = paramNames.map((name, idx) => {
+      const aText = argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
+      if (aText === name) return `${name}`;
+      return `${name}:${aText}`;
+    }).join(', ');
+    return `${exprText}({ ${props} })`;
+  };
+  
+  const yellowDecoration = vscode.window.createTextEditorDecorationType({ 
+    backgroundColor: 'rgba(255,255,0,0.4)'
+  });
+  const greenDecoration = vscode.window.createTextEditorDecorationType({ 
+    backgroundColor: 'rgba(100,255,100,0.3)'
+  });
+  
+  let callIdx = startIdx;
+  for (const c of confirmed) {
+    callIdx++;
+    
+    try {
+      const doc = await vscode.workspace.openTextDocument(c.filePath);
+      const startPos = doc.positionAt(c.start);
+      const endPos = doc.positionAt(c.end);
+      
+      await vscode.window.showTextDocument(doc, { preview: true });
+      const editor = vscode.window.activeTextEditor;
+      
+      if (editor) {
+        const topLine = Math.max(0, startPos.line - 5);
+        const topPos = new vscode.Position(topLine, 0);
+        editor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
+        
+        const repl = buildReplacement(c.exprText, c.argsText);
+        
+        if (highlightDelay === 0) {
+          // Show green preview immediately
+          await editor.edit(editBuilder => {
+            editBuilder.replace(new vscode.Range(startPos, endPos), repl);
+          });
+          const newEndPos = doc.positionAt(c.start + repl.length);
+          editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
+        } else {
+          // Show original in yellow
+          editor.setDecorations(yellowDecoration, [new vscode.Range(startPos, endPos)]);
+        }
+        
+        // Show dialog immediately (while highlight is visible)
+        const choice = await vscode.window.showInformationMessage(
+          `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
+          { modal: true },
+          'Next'
+        );
+        
+        if (choice === undefined) {
+          yellowDecoration.dispose();
+          greenDecoration.dispose();
+          void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
+          if (originalEditor && originalSelection) {
+            await vscode.window.showTextDocument(originalEditor.document, { 
+              selection: originalSelection, 
+              preserveFocus: false 
+            });
+          }
+          if (highlightDelay === 0) {
+            await vscode.commands.executeCommand('undo');
+          }
+          return true; // aborted
+        }
+        
+        if (highlightDelay === 0) {
+          editor.setDecorations(greenDecoration, []);
+          await vscode.commands.executeCommand('undo');
+        } else {
+          // Clear yellow, show green preview, then wait
+          editor.setDecorations(yellowDecoration, []);
+          
+          await editor.edit(editBuilder => {
+            editBuilder.replace(new vscode.Range(startPos, endPos), repl);
+          });
+          
+          const newEndPos = doc.positionAt(c.start + repl.length);
+          editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
+          
+          await new Promise(r => setTimeout(r, highlightDelay));
+          
+          await vscode.commands.executeCommand('undo');
+          editor.setDecorations(greenDecoration, []);
+        }
+      }
+    } catch (e) {
+      log('Error showing monitor preview:', e);
+    }
+  }
+  
+  yellowDecoration.dispose();
+  greenDecoration.dispose();
+  
+  return false; // not aborted
+}
+
+// Helper function to apply edits and highlight the function signature
+async function applyFunctionEditAndHighlight(
+  sourceFile: any,
+  originalFunctionText: string,
+  newFnText: string,
+  targetStart: number,
+  targetEnd: number,
+  originalEditor: vscode.TextEditor | undefined,
+  originalSelection: vscode.Selection | undefined,
+  highlightDelay: number,
+  convertedCount: number
+): Promise<void> {
+  const uri = vscode.Uri.file(sourceFile.getFilePath());
+  const doc = await vscode.workspace.openTextDocument(uri);
+  const full = doc.getText();
+  const idx = full.indexOf(originalFunctionText);
+  const startPosReplace = idx >= 0 ? doc.positionAt(idx) : doc.positionAt(targetStart);
+  const endPosReplace = idx >= 0 ? doc.positionAt(idx + originalFunctionText.length) : doc.positionAt(targetEnd);
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(uri, new vscode.Range(startPosReplace, endPosReplace), newFnText);
+  const ok = await vscode.workspace.applyEdit(edit);
+  log('applied function text edit:', ok);
+  
+  // Calculate the range of the updated function signature for highlighting
+  let parenDepth = 0;
+  let signatureEnd = 0;
+  for (let i = 0; i < newFnText.length; i++) {
+    if (newFnText[i] === '(') parenDepth++;
+    if (newFnText[i] === ')') {
+      parenDepth--;
+      if (parenDepth === 0) {
+        const remaining = newFnText.substring(i + 1);
+        const braceIdx = remaining.indexOf('{');
+        signatureEnd = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
+        break;
+      }
+    }
+  }
+  if (signatureEnd === 0) signatureEnd = newFnText.indexOf('{');
+  if (signatureEnd <= 0) signatureEnd = newFnText.length;
+  
+  const newSignatureEndPos = idx >= 0 ? doc.positionAt(idx + signatureEnd) : doc.positionAt(targetStart + signatureEnd);
+  const functionRange = new vscode.Range(startPosReplace, newSignatureEndPos);
+  
+  log('Highlighting function definition, range:', functionRange, 'highlightDelay:', highlightDelay);
+  
+  if (originalEditor && originalSelection) {
+    await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
+    
+    if (highlightDelay > 0) {
+      const highlightColor = convertedCount > 0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.3)';
+      log('Creating decoration with color:', highlightColor);
+      const defDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: highlightColor });
+      const currentEditor = vscode.window.activeTextEditor;
+      if (currentEditor) {
+        currentEditor.setDecorations(defDecoration, [functionRange]);
+        log('Decoration applied, waiting for', highlightDelay, 'ms');
+        await new Promise(r => setTimeout(r, highlightDelay));
+        log('Disposing decoration');
+        defDecoration.dispose();
+      }
+    }
+  }
+}
+
 export async function convertCommandHandler(...args: any[]): Promise<void> {
   const context = utils.getWorkspaceContext();
   if (!context) return;
@@ -567,141 +743,19 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       
       // Check if monitor conversions is enabled (already retrieved above)
       if (monitorConversions) {
-        // Show preview dialog for each confirmed call
-        const totalCalls = confirmed.length;
-        const buildReplacement = (exprText: string, argsTextArr: string[]) => {
-          const props = paramNames.map((name, idx) => {
-            const aText = argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-            if (aText === name) return `${name}`;
-            return `${name}:${aText}`;
-          }).join(', ');
-          return `${exprText}({ ${props} })`;
-        };
-        
-        const yellowDecoration = vscode.window.createTextEditorDecorationType({ 
-          backgroundColor: 'rgba(255,255,0,0.4)'
-        });
-        const greenDecoration = vscode.window.createTextEditorDecorationType({ 
-          backgroundColor: 'rgba(100,255,100,0.3)'
-        });
-        
-        let callIdx = 0;
-        for (const c of confirmed) {
-          if (aborted) break;
-          callIdx++;
-          
-          try {
-            const doc = await vscode.workspace.openTextDocument(c.filePath);
-            const startPos = doc.positionAt(c.start);
-            const endPos = doc.positionAt(c.end);
-            
-            await vscode.window.showTextDocument(doc, { preview: true });
-            const editor = vscode.window.activeTextEditor;
-            
-            if (editor) {
-              const topLine = Math.max(0, startPos.line - 5);
-              const topPos = new vscode.Position(topLine, 0);
-              editor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
-              
-              // When delay is 0, show green preview immediately; otherwise show yellow first
-              if (highlightDelay === 0) {
-                // Show green preview immediately
-                const repl = buildReplacement(c.exprText, c.argsText);
-                await editor.edit(editBuilder => {
-                  editBuilder.replace(new vscode.Range(startPos, endPos), repl);
-                });
-                const newEndPos = doc.positionAt(c.start + repl.length);
-                editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
-              } else {
-                // Show original in yellow
-                editor.setDecorations(yellowDecoration, [new vscode.Range(startPos, endPos)]);
-              }
-              
-              // Show dialog immediately (while highlight is visible)
-              const choice = await vscode.window.showInformationMessage(
-                `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
-                { modal: true },
-                'Next'
-              );
-              
-              if (choice === undefined) {
-                log('User clicked cancel in confirmed monitoring dialog');
-                yellowDecoration.dispose();
-                greenDecoration.dispose();
-                void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
-                if (originalEditor && originalSelection) {
-                  await vscode.window.showTextDocument(originalEditor.document, { 
-                    selection: originalSelection, 
-                    preserveFocus: false 
-                  });
-                }
-                aborted = true;
-                log('Set aborted flag to true, breaking from loop');
-                // Undo preview if we showed it
-                if (highlightDelay === 0) {
-                  await vscode.commands.executeCommand('undo');
-                }
-                break;
-              }
-              
-              if (highlightDelay === 0) {
-                // Clear green decoration and undo preview immediately
-                editor.setDecorations(greenDecoration, []);
-                await vscode.commands.executeCommand('undo');
-              } else {
-                // Clear yellow, show preview in green, then wait
-                editor.setDecorations(yellowDecoration, []);
-                
-                // Switch to preview in light green (will convert)
-                const repl = buildReplacement(c.exprText, c.argsText);
-                await editor.edit(editBuilder => {
-                  editBuilder.replace(new vscode.Range(startPos, endPos), repl);
-                });
-                
-                const newEndPos = doc.positionAt(c.start + repl.length);
-                editor.setDecorations(yellowDecoration, []);
-                editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
-                
-                await new Promise(r => setTimeout(r, highlightDelay));
-                
-                // Undo the preview
-                await vscode.commands.executeCommand('undo');
-                editor.setDecorations(greenDecoration, []);
-              }
-            }
-          } catch (e) {
-            log('Error showing monitor preview:', e);
-          }
-        }
-        
-        yellowDecoration.dispose();
-        greenDecoration.dispose();
-        
-        log('After confirmed monitoring loop, aborted =', aborted);
+        aborted = await monitorConfirmedCalls(
+          confirmed,
+          confirmed.length,
+          0,
+          paramNames,
+          highlightDelay,
+          originalEditor,
+          originalSelection
+        );
         
         if (aborted) {
-          log('Aborted is true, returning early');
-          if (originalEditor && originalSelection) {
-            await vscode.window.showTextDocument(originalEditor.document, { 
-              selection: originalSelection, 
-              preserveFocus: false 
-            });
-          }
           return;
         }
-      }
-      
-      log('After monitoring block, aborted =', aborted);
-      
-      if (aborted) {
-        log('Aborted is true in outer check, returning early');
-        if (originalEditor && originalSelection) {
-          await vscode.window.showTextDocument(originalEditor.document, { 
-            selection: originalSelection, 
-            preserveFocus: false 
-          });
-        }
-        return;
       }
       
       const edit = new vscode.WorkspaceEdit();
@@ -765,62 +819,20 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       }
       
       const isTypeScript = sourceFile.getFilePath().endsWith('.ts') || sourceFile.getFilePath().endsWith('.tsx');
+      const newFnText = transformFunctionText(originalFunctionText, paramNames, paramTypeText, isTypeScript);
+      
       try {
-        const uri = vscode.Uri.file(sourceFile.getFilePath());
-        const doc = await vscode.workspace.openTextDocument(uri);
-        const full = doc.getText();
-        const newFnText = transformFunctionText(originalFunctionText, paramNames, paramTypeText, isTypeScript);
-        const idx = full.indexOf(originalFunctionText);
-        const startPosReplace = idx >= 0 ? doc.positionAt(idx) : doc.positionAt(targetStart);
-        const endPosReplace = idx >= 0 ? doc.positionAt(idx + originalFunctionText.length) : doc.positionAt(targetEnd);
-        const edit2 = new vscode.WorkspaceEdit();
-        edit2.replace(uri, new vscode.Range(startPosReplace, endPosReplace), newFnText);
-        const ok2 = await vscode.workspace.applyEdit(edit2);
-        log('applied function text edit:', ok2);
-        
-        // Calculate the range of the updated function signature for highlighting (just the first line)
-        // Find the closing paren after the parameters
-        let parenDepth = 0;
-        let signatureEnd = 0;
-        for (let i = 0; i < newFnText.length; i++) {
-          if (newFnText[i] === '(') parenDepth++;
-          if (newFnText[i] === ')') {
-            parenDepth--;
-            if (parenDepth === 0) {
-              // Find the end of the return type or the opening brace
-              const remaining = newFnText.substring(i + 1);
-              const braceIdx = remaining.indexOf('{');
-              signatureEnd = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
-              break;
-            }
-          }
-        }
-        if (signatureEnd === 0) signatureEnd = newFnText.indexOf('{');
-        if (signatureEnd <= 0) signatureEnd = newFnText.length;
-        
-        const newSignatureEndPos = idx >= 0 ? doc.positionAt(idx + signatureEnd) : doc.positionAt(targetStart + signatureEnd);
-        const functionRange = new vscode.Range(startPosReplace, newSignatureEndPos);
-        
-        log('Highlighting function definition, range:', functionRange, 'highlightDelay:', highlightDelay);
-        
-        if (originalEditor && originalSelection) {
-          await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
-          
-          // Highlight the converted function definition
-          if (highlightDelay > 0) {
-            const highlightColor = confirmed.length > 0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.3)';
-            log('Creating decoration with color:', highlightColor);
-            const defDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: highlightColor });
-            const currentEditor = vscode.window.activeTextEditor;
-            if (currentEditor) {
-              currentEditor.setDecorations(defDecoration, [functionRange]);
-              log('Decoration applied, waiting for', highlightDelay, 'ms');
-              await new Promise(r => setTimeout(r, highlightDelay));
-              log('Disposing decoration');
-              defDecoration.dispose();
-            }
-          }
-        }
+        await applyFunctionEditAndHighlight(
+          sourceFile,
+          originalFunctionText,
+          newFnText,
+          targetStart,
+          targetEnd,
+          originalEditor,
+          originalSelection,
+          highlightDelay,
+          confirmed.length
+        );
       } catch (e) {
         log('error applying function text edit', e);
       }
@@ -1091,136 +1103,17 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     // If monitoring, show preview for confirmed calls AFTER fuzzy calls
     if (monitorConversions && confirmed.length > 0 && !aborted) {
       log('Entering confirmed monitoring block');
-      const buildReplacement = (exprText: string, argsTextArr: string[]) => {
-        const props = paramNames.map((name, idx) => {
-          const aText = argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-          if (aText === name) return `${name}`;
-          return `${name}:${aText}`;
-        }).join(', ');
-        return `${exprText}({ ${props} })`;
-      };
-      
-      const yellowDecoration = vscode.window.createTextEditorDecorationType({ 
-        backgroundColor: 'rgba(255,255,0,0.4)'
-      });
-      const greenDecoration = vscode.window.createTextEditorDecorationType({ 
-        backgroundColor: 'rgba(100,255,100,0.3)'
-      });
-      
-      // Continue callIdx from where fuzzy calls left off
-      for (const c of confirmed) {
-        if (aborted) break;
-        callIdx++;
-        
-        try {
-          const doc = await vscode.workspace.openTextDocument(c.filePath);
-          const startPos = doc.positionAt(c.start);
-          const endPos = doc.positionAt(c.end);
-          
-          await vscode.window.showTextDocument(doc, { preview: true });
-          const editor = vscode.window.activeTextEditor;
-          
-          if (editor) {
-            const topLine = Math.max(0, startPos.line - 5);
-            const topPos = new vscode.Position(topLine, 0);
-            editor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
-            
-            // Build replacement to get the preview text
-            const repl = buildReplacement(c.exprText, c.argsText);
-            
-            if (highlightDelay === 0) {
-              // For delay=0: show green preview immediately while dialog is open
-              await editor.edit(editBuilder => {
-                editBuilder.replace(new vscode.Range(startPos, endPos), repl);
-              });
-              
-              const newEndPos = doc.positionAt(c.start + repl.length);
-              editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
-              
-              // Show dialog
-              const choice = await vscode.window.showInformationMessage(
-                `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
-                { modal: true },
-                'Next'
-              );
-              
-              // Clear preview and undo immediately after dialog
-              editor.setDecorations(greenDecoration, []);
-              await vscode.commands.executeCommand('undo');
-              
-              if (choice === undefined) {
-                yellowDecoration.dispose();
-                greenDecoration.dispose();
-                void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
-                if (originalEditor && originalSelection) {
-                  await vscode.window.showTextDocument(originalEditor.document, { 
-                    selection: originalSelection, 
-                    preserveFocus: false 
-                  });
-                }
-                aborted = true;
-                break;
-              }
-            } else {
-              // For delay>0: show yellow, show dialog immediately, then green preview
-              // Show original in yellow
-              editor.setDecorations(yellowDecoration, [new vscode.Range(startPos, endPos)]);
-              
-              // Show dialog immediately (while yellow highlight is visible)
-              const choice = await vscode.window.showInformationMessage(
-                `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.`,
-                { modal: true },
-                'Next'
-              );
-              
-              if (choice === undefined) {
-                yellowDecoration.dispose();
-                greenDecoration.dispose();
-                void vscode.window.showInformationMessage('Objectify Params: Operation cancelled — no changes made.');
-                if (originalEditor && originalSelection) {
-                  await vscode.window.showTextDocument(originalEditor.document, { 
-                    selection: originalSelection, 
-                    preserveFocus: false 
-                  });
-                }
-                aborted = true;
-                break;
-              }
-              
-              // Clear yellow, show green preview, then wait
-              editor.setDecorations(yellowDecoration, []);
-              
-              // Switch to preview in light green (will convert)
-              await editor.edit(editBuilder => {
-                editBuilder.replace(new vscode.Range(startPos, endPos), repl);
-              });
-              
-              const newEndPos = doc.positionAt(c.start + repl.length);
-              editor.setDecorations(yellowDecoration, []);
-              editor.setDecorations(greenDecoration, [new vscode.Range(startPos, newEndPos)]);
-              
-              await new Promise(r => setTimeout(r, highlightDelay));
-              
-              // Undo the preview
-              await vscode.commands.executeCommand('undo');
-              editor.setDecorations(greenDecoration, []);
-            }
-          }
-        } catch (e) {
-          log('Error showing monitor preview:', e);
-        }
-      }
-      
-      yellowDecoration.dispose();
-      greenDecoration.dispose();
+      aborted = await monitorConfirmedCalls(
+        confirmed, 
+        totalCalls, 
+        fuzzy.length,
+        paramNames, 
+        highlightDelay, 
+        originalEditor, 
+        originalSelection
+      );
       
       if (aborted) {
-        if (originalEditor && originalSelection) {
-          await vscode.window.showTextDocument(originalEditor.document, { 
-            selection: originalSelection, 
-            preserveFocus: false 
-          });
-        }
         return;
       }
     }
@@ -1327,59 +1220,21 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
     
     const isTypeScript2 = sourceFile.getFilePath().endsWith('.ts') || sourceFile.getFilePath().endsWith('.tsx');
+    const newFnText2 = transformFunctionText(originalFunctionText, paramNames, paramTypeText2, isTypeScript2);
+    
     try {
-      const uri2 = vscode.Uri.file(sourceFile.getFilePath());
-      const doc2 = await vscode.workspace.openTextDocument(uri2);
-      const newFnText2 = transformFunctionText(originalFunctionText, paramNames, paramTypeText2, isTypeScript2);
-      const full2 = doc2.getText();
-      const idx2 = full2.indexOf(originalFunctionText);
-      const startReplace2 = idx2 >= 0 ? doc2.positionAt(idx2) : doc2.positionAt(targetStart);
-      const endReplace2 = idx2 >= 0 ? doc2.positionAt(idx2 + originalFunctionText.length) : doc2.positionAt(targetEnd);
-      const edit3 = new vscode.WorkspaceEdit();
-      edit3.replace(uri2, new vscode.Range(startReplace2, endReplace2), newFnText2);
-      const ok3 = await vscode.workspace.applyEdit(edit3);
-      log('applied function text edit (all):', ok3);
-      
-      // Calculate the range of the updated function signature for highlighting (just the first line)
-      // Find the closing paren after the parameters
-      let parenDepth2 = 0;
-      let signatureEnd2 = 0;
-      for (let i = 0; i < newFnText2.length; i++) {
-        if (newFnText2[i] === '(') parenDepth2++;
-        if (newFnText2[i] === ')') {
-          parenDepth2--;
-          if (parenDepth2 === 0) {
-            // Find the end of the return type or the opening brace
-            const remaining = newFnText2.substring(i + 1);
-            const braceIdx = remaining.indexOf('{');
-            signatureEnd2 = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
-            break;
-          }
-        }
-      }
-      if (signatureEnd2 === 0) signatureEnd2 = newFnText2.indexOf('{');
-      if (signatureEnd2 <= 0) signatureEnd2 = newFnText2.length;
-      
-      const newSignatureEndPos2 = idx2 >= 0 ? doc2.positionAt(idx2 + signatureEnd2) : doc2.positionAt(targetStart + signatureEnd2);
-      const functionRange2 = new vscode.Range(startReplace2, newSignatureEndPos2);
-      
-      try { highlightDecoration.dispose(); } catch (e) { }
-      if (originalEditor && originalSelection) {
-        await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
-        
-        // Highlight the converted function definition
-        if (highlightDelay > 0) {
-          const totalConverted = confirmed.length + acceptedFuzzy.length;
-          const highlightColor = totalConverted > 0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.3)';
-          const defDecoration = vscode.window.createTextEditorDecorationType({ backgroundColor: highlightColor });
-          const currentEditor = vscode.window.activeTextEditor;
-          if (currentEditor) {
-            currentEditor.setDecorations(defDecoration, [functionRange2]);
-            await new Promise(r => setTimeout(r, highlightDelay));
-            defDecoration.dispose();
-          }
-        }
-      }
+      const totalConverted = confirmed.length + acceptedFuzzy.length;
+      await applyFunctionEditAndHighlight(
+        sourceFile,
+        originalFunctionText,
+        newFnText2,
+        targetStart,
+        targetEnd,
+        originalEditor,
+        originalSelection,
+        highlightDelay,
+        totalConverted
+      );
     } catch (e) {
       log('error applying function text edit (all)', e);
     }
