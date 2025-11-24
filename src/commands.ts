@@ -287,9 +287,114 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         if (!expr) continue;
         const exprText = expr.getText();
 
+        // Check for .call(), .apply(), .bind() - these have PropertyAccessExpression
+        if (expr.getKind && expr.getKind() === SyntaxKind.PropertyAccessExpression) {
+          const propAccess = expr as any;
+          const propName = propAccess.getName && propAccess.getName();
+          
+          if (propName === 'call' || propName === 'apply' || propName === 'bind') {
+            const objExpr = propAccess.getExpression && propAccess.getExpression();
+            const objText = objExpr ? objExpr.getText() : '';
+            
+            // Check if the object being called is our target function
+            if (objText === fnName || objText.endsWith('.' + fnName)) {
+              const conflictFile = sf.getFilePath();
+              log(`${propName}() detected in`, conflictFile, 'expr:', exprText);
+              
+              try {
+                const doc = await vscode.workspace.openTextDocument(conflictFile);
+                const callStartPos = doc.positionAt(call.getStart());
+                const callEndPos = doc.positionAt(call.getEnd());
+                
+                await vscode.window.showTextDocument(doc, { preview: true });
+                const tempEditor = vscode.window.activeTextEditor;
+                
+                if (tempEditor) {
+                  const topLine = Math.max(0, callStartPos.line - 5);
+                  const topPos = new vscode.Position(topLine, 0);
+                  tempEditor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
+                  
+                  const highlightDecoration = vscode.window.createTextEditorDecorationType({ 
+                    backgroundColor: 'rgba(255,200,100,0.3)',
+                    border: '1px solid rgba(255,200,100,0.8)'
+                  });
+                  tempEditor.setDecorations(highlightDecoration, [new vscode.Range(callStartPos, callEndPos)]);
+                  
+                  const response = await vscode.window.showWarningMessage(
+                    `⚠️ Cannot convert function\n\n` +
+                    `Found usage with .${propName}() at:\n` +
+                    `${path.basename(conflictFile)}:${callStartPos.line + 1}\n\n` +
+                    `The .call(), .apply(), and .bind() methods are incompatible with object parameters.\n\n` +
+                    `Expression: ${exprText}`,
+                    { modal: true }
+                  );
+                  
+                  highlightDecoration.dispose();
+                  
+                  log('User notified about', propName, '- stopping conversion');
+                  return;
+                }
+              } catch (e) {
+                log('error showing call/apply/bind warning:', e);
+              }
+              continue;
+            }
+          }
+        }
+
         if (!fnName) continue;
         const looksLikeCall = (exprText === fnName || exprText.endsWith('.' + fnName) || exprText.endsWith('[' + fnName + ']'));
         if (!looksLikeCall) continue;
+
+        // Check for .call, .apply, or .bind usage
+        const isCallApplyBind = exprText === `${fnName}.call` || exprText === `${fnName}.apply` || exprText === `${fnName}.bind` ||
+                                exprText.endsWith(`.${fnName}.call`) || exprText.endsWith(`.${fnName}.apply`) || exprText.endsWith(`.${fnName}.bind`);
+        
+        if (isCallApplyBind) {
+          const conflictFile = sf.getFilePath();
+          log('call/apply/bind detected in', conflictFile);
+          
+          try {
+            const doc = await vscode.workspace.openTextDocument(conflictFile);
+            const callStartPos = doc.positionAt(call.getStart());
+            const callEndPos = doc.positionAt(call.getEnd());
+            
+            await vscode.window.showTextDocument(doc, { preview: true });
+            const tempEditor = vscode.window.activeTextEditor;
+            
+            if (tempEditor) {
+              const topLine = Math.max(0, callStartPos.line - 5);
+              const topPos = new vscode.Position(topLine, 0);
+              tempEditor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
+              
+              const highlightDecoration = vscode.window.createTextEditorDecorationType({ 
+                backgroundColor: 'rgba(255,200,100,0.3)',
+                border: '1px solid rgba(255,200,100,0.8)'
+              });
+              tempEditor.setDecorations(highlightDecoration, [new vscode.Range(callStartPos, callEndPos)]);
+              
+              const response = await vscode.window.showWarningMessage(
+                `⚠️ Cannot convert function\n\n` +
+                `Found usage with .call(), .apply(), or .bind() at:\n` +
+                `${path.basename(conflictFile)}:${callStartPos.line + 1}\n\n` +
+                `These methods pass arguments positionally and would break after conversion to object parameters.\n\n` +
+                `Expression: ${exprText}`,
+                { modal: true },
+                'Cancel Scanning'
+              );
+              
+              highlightDecoration.dispose();
+              
+              if (response === 'Cancel Scanning') {
+                log('User cancelled scanning due to call/apply/bind');
+                return;
+              }
+            }
+          } catch (e) {
+            log('error showing call/apply/bind warning:', e);
+          }
+          continue;
+        }
 
         const calledSym = expr.getSymbol && expr.getSymbol();
         const resolvedCalled = calledSym && (calledSym.getAliasedSymbol ? (calledSym.getAliasedSymbol() || calledSym) : calledSym);

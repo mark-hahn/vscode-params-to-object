@@ -1,10 +1,20 @@
 bugs...
-
+  
 todo ...
   add detailed explanations to the dialog
 
 params
-  Binding/call/apply effects: call/apply can change this and pass args dynamically.
   Variants inside destructuring: nested defaults, rest within destructuring (function f({a, ...rest} = {})).
 
+  default
+  rest
+  deconstructing
+  Optional parameters (TypeScript): fn(x?: number) 
+  Parameter properties (TypeScript): constructor(public x: number).
+  Parameter decorators (TypeScript, experimental): @dec param for metadata/transform
+  earlier params can be used by later defaults only if defined.
+  Function arity (function.length): counts parameters before the first default/rest
+  Overloads (TypeScript)
+  Binding/call/apply effects: call/apply can change this and pass args 
+  dynamically.
 
