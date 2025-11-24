@@ -170,39 +170,15 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     const hasObjectDestructuring = params.length === 1 && params[0].getStructure && (() => {
       try {
         const paramText = params[0].getText();
-        return paramText.trim().startsWith('{') && paramText.includes(':');
+        return paramText.trim().startsWith('{');
       } catch {
         return false;
       }
     })();
 
     if (hasObjectDestructuring) {
-      // Show function definition at top with highlight
-      const funcStartPos = editor.document.positionAt(targetStart);
-      const funcEndPos = editor.document.positionAt(targetEnd);
-      const topLine = Math.max(0, funcStartPos.line - 3);
-      const topPos = new vscode.Position(topLine, 0);
-      editor.revealRange(new vscode.Range(topPos, topPos), vscode.TextEditorRevealType.AtTop);
-      
-      const highlightDecoration = vscode.window.createTextEditorDecorationType({ 
-        backgroundColor: 'rgba(255,200,0,0.3)',
-        border: '1px solid rgba(255,200,0,0.6)'
-      });
-      editor.setDecorations(highlightDecoration, [new vscode.Range(funcStartPos, funcEndPos)]);
-
-      const choice = await vscode.window.showWarningMessage(
-        `Function "${fnName || '<anonymous>'}" appears to already use object destructuring. Continue anyway?`,
-        { modal: true },
-        'Continue',
-        'Cancel'
-      );
-
-      highlightDecoration.dispose();
-
-      if (choice !== 'Continue') {
-        void vscode.window.showInformationMessage('Operation cancelled.');
-        return;
-      }
+      void vscode.window.showInformationMessage('This function already uses object destructuring parameters.');
+      return;
     }
 
     const transformFunctionText = (fnText: string, paramNames: string[], objectParamName: string, paramTypeText: string, isTypeScript: boolean) => {

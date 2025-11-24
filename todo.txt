@@ -4,7 +4,6 @@ todo ...
   add detailed explanations to the dialog
 
 params
-  rest
   deconstructing
   Optional parameters (TypeScript): fn(x?: number) 
   Parameter properties (TypeScript): constructor(public x: number).
