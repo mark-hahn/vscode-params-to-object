@@ -962,6 +962,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     const totalCalls = confirmed.length + fuzzy.length;
     const totalFuzzy = fuzzy.length;
     let callIdx = confirmed.length; // Start after confirmed calls
+    const acceptedFuzzy: typeof fuzzy = []; // Track which fuzzy calls were accepted
     for (const candidate of fuzzy) {
       callIdx++;
       
@@ -1151,6 +1152,9 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         }
       }
 
+      // User chose to convert this fuzzy call
+      acceptedFuzzy.push(candidate);
+
       try {
         if (candidate.argsText && candidate.argsText.length >= paramNames.length) {
           const props = paramNames.map((name, idx) => {
@@ -1214,8 +1218,8 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       return `${exprText}({ ${props} })`;
     };
 
-    const allCandidates = [...confirmed, ...fuzzy];
-    log('allCandidates count:', allCandidates.length, '(confirmed:', confirmed.length, 'fuzzy:', fuzzy.length, ')');
+    const allCandidates = [...confirmed, ...acceptedFuzzy];
+    log('allCandidates count:', allCandidates.length, '(confirmed:', confirmed.length, 'acceptedFuzzy:', acceptedFuzzy.length, ')');
     
     if (allCandidates.length === 0) {
       log('No candidates to convert after fuzzy review');
@@ -1312,7 +1316,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     try { highlightDecoration.dispose(); } catch (e) { }
     if (originalEditor && originalSelection) await vscode.window.showTextDocument(originalEditor.document, { selection: originalSelection, preserveFocus: false });
-    void vscode.window.showInformationMessage(`Objectify Params: Converted ${confirmed.length + fuzzy.length} call(s) and updated function.`);
+    void vscode.window.showInformationMessage(`Objectify Params: Converted ${confirmed.length + acceptedFuzzy.length} call(s) and updated function.`);
   } catch (err) {
     console.error(err);
     void vscode.window.showErrorMessage('An error occurred: ' + (err.message || err));
