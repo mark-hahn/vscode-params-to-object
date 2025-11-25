@@ -200,26 +200,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
 
     // Resolve target symbol
-    const typeChecker = project.getTypeChecker();
-    let targetSym = targetFunction.getSymbol && targetFunction.getSymbol();
+    const { resolvedTarget, canProceedWithoutSymbol } = parse.resolveSymbol(
+      project,
+      targetFunction,
+      targetVariableDeclaration,
+      fnName
+    );
 
-    // For arrow functions/function expressions in variables, get symbol from the variable
-    if (!targetSym && targetVariableDeclaration) {
-      targetSym =
-        targetVariableDeclaration.getSymbol &&
-        targetVariableDeclaration.getSymbol();
-    }
-
-    const resolvedTarget =
-      targetSym &&
-      (targetSym.getAliasedSymbol
-        ? targetSym.getAliasedSymbol() || targetSym
-        : targetSym);
-    
-    // For object methods (Vue components, etc.) without symbols, 
-    // we can still proceed using name-based matching
-    const canProceedWithoutSymbol = !resolvedTarget && fnName;
-    
     if (!resolvedTarget && !canProceedWithoutSymbol) {
       void vscode.window.showInformationMessage(
         'Objectify Params: This function cannot be converted — cannot resolve symbol for the selected function.'
@@ -624,57 +611,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       const isTypeScript =
         sourceFile.getFilePath().endsWith('.ts') ||
         sourceFile.getFilePath().endsWith('.tsx');
-      const paramTypes = params.map((p: any) => {
-        if (isRestParameter && restTupleElements.length > 0) {
-          const typeNode = p.getTypeNode();
-          if (typeNode) {
-            const typeText = typeNode.getText();
-            const tupleMatch = typeText.match(/\[([^\]]+)\]/);
-            if (tupleMatch) {
-              const elements = tupleMatch[1]
-                .split(',')
-                .map((e: string) => e.trim());
-              return elements.map((e: string) => {
-                const colonIndex = e.indexOf(':');
-                return colonIndex > 0
-                  ? e.substring(colonIndex + 1).trim()
-                  : 'any';
-              });
-            }
-          }
-          return restTupleElements.map(() => 'any');
-        }
-        const typeNode = p.getTypeNode && p.getTypeNode();
-        if (typeNode) return typeNode.getText();
-        const pType = p.getType && p.getType();
-        return pType ? pType.getText() : 'any';
-      });
-
-      let paramTypeText = '';
-      if (isTypeScript) {
-        if (isRestParameter) {
-          const flatTypes = paramTypes.flat();
-          paramTypeText = `{ ${paramNames
-            .map((n: string, i: number) => {
-              const param = params[0];
-              const isOptional =
-                param && param.hasQuestionToken && param.hasQuestionToken();
-              const optionalMark = isOptional ? '?' : '';
-              return `${n}${optionalMark}: ${flatTypes[i] || 'any'}`;
-            })
-            .join('; ')} }`;
-        } else {
-          paramTypeText = `{ ${paramNames
-            .map((n: string, i: number) => {
-              const param = params[i];
-              const isOptional =
-                param && param.hasQuestionToken && param.hasQuestionToken();
-              const optionalMark = isOptional ? '?' : '';
-              return `${n}${optionalMark}: ${paramTypes[i] || 'any'}`;
-            })
-            .join('; ')} }`;
-        }
-      }
+      const paramTypeText = parse.extractParameterTypes(
+        params,
+        paramNames,
+        sourceFile,
+        isRestParameter,
+        restTupleElements
+      );
 
       const newFnText = text.transformFunctionText(
         originalFunctionText,
@@ -777,49 +720,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         'file(s) - files are marked dirty, user can save manually'
       );
 
-      const paramTypes = params.map((p: any) => {
-        const tn = p.getTypeNode && p.getTypeNode();
-        if (tn) return tn.getText();
-        try {
-          return p.getType().getText();
-        } catch (e) {
-          return 'any';
-        }
-      });
-
-      let paramTypeText: string;
-      if (isRestParameter && restTupleElements.length > 0) {
-        // Extract individual types from tuple type [cmd: string, val: any]
-        const restParam = params[0];
-        const typeNode = restParam.getTypeNode();
-        const typeText = typeNode ? typeNode.getText() : '';
-        const tupleMatch = typeText.match(/\[([^\]]+)\]/);
-
-        if (tupleMatch) {
-          const elements = tupleMatch[1].split(',').map((e) => e.trim());
-          const types = elements.map((e) => {
-            const colonIndex = e.indexOf(':');
-            return colonIndex > 0 ? e.substring(colonIndex + 1).trim() : 'any';
-          });
-          paramTypeText = `{ ${paramNames
-            .map((n, i) => `${n}: ${types[i] || 'any'}`)
-            .join('; ')} }`;
-        } else {
-          paramTypeText = `{ ${paramNames
-            .map((n) => `${n}: any`)
-            .join('; ')} }`;
-        }
-      } else {
-        paramTypeText = `{ ${paramNames
-          .map((n, i) => {
-            const param = params[i];
-            const isOptional =
-              param && param.hasQuestionToken && param.hasQuestionToken();
-            const optionalMark = isOptional ? '?' : '';
-            return `${n}${optionalMark}: ${paramTypes[i] || 'any'}`;
-          })
-          .join('; ')} }`;
-      }
+      const paramTypeText = parse.extractParameterTypes(
+        params,
+        paramNames,
+        sourceFile,
+        isRestParameter,
+        restTupleElements
+      );
 
       const isTypeScript =
         sourceFile.getFilePath().endsWith('.ts') ||
@@ -1314,47 +1221,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       'file(s) - files are marked dirty, user can save manually'
     );
 
-    const paramTypes2 = params.map((p: any) => {
-      const tn = p.getTypeNode && p.getTypeNode();
-      if (tn) return tn.getText();
-      try {
-        return p.getType().getText();
-      } catch (e) {
-        return 'any';
-      }
-    });
-
-    let paramTypeText2: string;
-    if (isRestParameter && restTupleElements.length > 0) {
-      // Extract individual types from tuple type [cmd: string, val: any]
-      const restParam = params[0];
-      const typeNode = restParam.getTypeNode();
-      const typeText = typeNode ? typeNode.getText() : '';
-      const tupleMatch = typeText.match(/\[([^\]]+)\]/);
-
-      if (tupleMatch) {
-        const elements = tupleMatch[1].split(',').map((e) => e.trim());
-        const types = elements.map((e) => {
-          const colonIndex = e.indexOf(':');
-          return colonIndex > 0 ? e.substring(colonIndex + 1).trim() : 'any';
-        });
-        paramTypeText2 = `{ ${paramNames
-          .map((n, i) => `${n}: ${types[i] || 'any'}`)
-          .join('; ')} }`;
-      } else {
-        paramTypeText2 = `{ ${paramNames.map((n) => `${n}: any`).join('; ')} }`;
-      }
-    } else {
-      paramTypeText2 = `{ ${paramNames
-        .map((n, i) => {
-          const param = params[i];
-          const isOptional =
-            param && param.hasQuestionToken && param.hasQuestionToken();
-          const optionalMark = isOptional ? '?' : '';
-          return `${n}${optionalMark}: ${paramTypes2[i] || 'any'}`;
-        })
-        .join('; ')} }`;
-    }
+    const paramTypeText2 = parse.extractParameterTypes(
+      params,
+      paramNames,
+      sourceFile,
+      isRestParameter,
+      restTupleElements
+    );
 
     const isTypeScript2 =
       sourceFile.getFilePath().endsWith('.ts') ||

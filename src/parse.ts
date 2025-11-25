@@ -5,6 +5,116 @@ import * as utils from './utils';
 
 const { log } = utils.getLog('pars');
 
+export interface SymbolResolution {
+  resolvedTarget: any;
+  canProceedWithoutSymbol: boolean;
+}
+
+/**
+ * Resolve the symbol for a target function
+ * Handles:
+ * - Regular functions
+ * - Arrow functions/function expressions in variables
+ * - Object methods (Vue components) that don't have resolvable symbols
+ */
+export function resolveSymbol(
+  project: Project,
+  targetFunction: any,
+  targetVariableDeclaration: any | null,
+  fnName: string | null
+): SymbolResolution {
+  const typeChecker = project.getTypeChecker();
+  let targetSym = targetFunction.getSymbol && targetFunction.getSymbol();
+
+  // For arrow functions/function expressions in variables, get symbol from the variable
+  if (!targetSym && targetVariableDeclaration) {
+    targetSym =
+      targetVariableDeclaration.getSymbol &&
+      targetVariableDeclaration.getSymbol();
+  }
+
+  const resolvedTarget =
+    targetSym &&
+    (targetSym.getAliasedSymbol
+      ? targetSym.getAliasedSymbol() || targetSym
+      : targetSym);
+
+  // For object methods (Vue components, etc.) without symbols,
+  // we can still proceed using name-based matching
+  const canProceedWithoutSymbol = !resolvedTarget && !!fnName;
+
+  return {
+    resolvedTarget,
+    canProceedWithoutSymbol,
+  };
+}
+
+/**
+ * Extract parameter types and build the type text for the destructured parameter
+ */
+export function extractParameterTypes(
+  params: any[],
+  paramNames: string[],
+  sourceFile: SourceFile,
+  isRestParameter: boolean,
+  restTupleElements: string[]
+): string {
+  const isTypeScript =
+    sourceFile.getFilePath().endsWith('.ts') ||
+    sourceFile.getFilePath().endsWith('.tsx');
+
+  if (!isTypeScript) {
+    return '';
+  }
+
+  const paramTypes = params.map((p: any) => {
+    if (isRestParameter && restTupleElements.length > 0) {
+      const typeNode = p.getTypeNode();
+      if (typeNode) {
+        const typeText = typeNode.getText();
+        const tupleMatch = typeText.match(/\[([^\]]+)\]/);
+        if (tupleMatch) {
+          const elements = tupleMatch[1].split(',').map((e: string) => e.trim());
+          return elements.map((e: string) => {
+            const colonIndex = e.indexOf(':');
+            return colonIndex > 0
+              ? e.substring(colonIndex + 1).trim()
+              : 'any';
+          });
+        }
+      }
+      return restTupleElements.map(() => 'any');
+    }
+    const typeNode = p.getTypeNode && p.getTypeNode();
+    if (typeNode) return typeNode.getText();
+    const pType = p.getType && p.getType();
+    return pType ? pType.getText() : 'any';
+  });
+
+  if (isRestParameter) {
+    const flatTypes = paramTypes.flat();
+    return `{ ${paramNames
+      .map((n: string, i: number) => {
+        const param = params[0];
+        const isOptional =
+          param && param.hasQuestionToken && param.hasQuestionToken();
+        const optionalMark = isOptional ? '?' : '';
+        return `${n}${optionalMark}: ${flatTypes[i] || 'any'}`;
+      })
+      .join('; ')} }`;
+  } else {
+    return `{ ${paramNames
+      .map((n: string, i: number) => {
+        const param = params[i];
+        const isOptional =
+          param && param.hasQuestionToken && param.hasQuestionToken();
+        const optionalMark = isOptional ? '?' : '';
+        return `${n}${optionalMark}: ${paramTypes[i] || 'any'}`;
+      })
+      .join('; ')} }`;
+  }
+}
+
 export async function createProjectFromConfig(
   workspaceRoot: string
 ): Promise<Project> {
