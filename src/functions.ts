@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { SyntaxKind, SourceFile } from 'ts-morph';
+import * as utils from './utils';
+
+const { log } = utils.getLog('func');
 
 export interface FunctionDetectionResult {
   targetFunction: any;
