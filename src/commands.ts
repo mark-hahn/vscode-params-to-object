@@ -5,6 +5,8 @@ import glob from 'glob';
 import * as fs from 'fs';
 import * as utils from './utils';
 import * as parse from './parse';
+import * as functions from './functions';
+import * as text from './text';
 
 const { log } = utils.getLog('cmds');
 
@@ -102,83 +104,6 @@ async function monitorConfirmedCalls(
   return false; // not aborted
 }
 
-// Helper function to apply edits and highlight the function signature
-async function applyFunctionEditAndHighlight(
-  sourceFile: any,
-  originalFunctionText: string,
-  newFnText: string,
-  targetStart: number,
-  targetEnd: number,
-  originalEditor: vscode.TextEditor | undefined,
-  originalSelection: vscode.Selection | undefined,
-  highlightDelay: number,
-  convertedCount: number
-): Promise<void> {
-  const uri = vscode.Uri.file(sourceFile.getFilePath());
-  const doc = await vscode.workspace.openTextDocument(uri);
-  const full = doc.getText();
-  const idx = full.indexOf(originalFunctionText);
-  const startPosReplace =
-    idx >= 0 ? doc.positionAt(idx) : doc.positionAt(targetStart);
-  const endPosReplace =
-    idx >= 0
-      ? doc.positionAt(idx + originalFunctionText.length)
-      : doc.positionAt(targetEnd);
-  const edit = new vscode.WorkspaceEdit();
-  edit.replace(
-    uri,
-    new vscode.Range(startPosReplace, endPosReplace),
-    newFnText
-  );
-  const ok = await vscode.workspace.applyEdit(edit);
-  log('applied function text edit:', ok);
-
-  // Calculate the range of the updated function signature for highlighting
-  let parenDepth = 0;
-  let signatureEnd = 0;
-  for (let i = 0; i < newFnText.length; i++) {
-    if (newFnText[i] === '(') parenDepth++;
-    if (newFnText[i] === ')') {
-      parenDepth--;
-      if (parenDepth === 0) {
-        const remaining = newFnText.substring(i + 1);
-        const braceIdx = remaining.indexOf('{');
-        signatureEnd = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
-        break;
-      }
-    }
-  }
-  if (signatureEnd === 0) signatureEnd = newFnText.indexOf('{');
-  if (signatureEnd <= 0) signatureEnd = newFnText.length;
-
-  const newSignatureEndPos =
-    idx >= 0
-      ? doc.positionAt(idx + signatureEnd)
-      : doc.positionAt(targetStart + signatureEnd);
-  const functionRange = new vscode.Range(startPosReplace, newSignatureEndPos);
-
-  if (originalEditor && originalSelection) {
-    await vscode.window.showTextDocument(originalEditor.document, {
-      selection: originalSelection,
-      preserveFocus: false,
-    });
-
-    if (highlightDelay > 0) {
-      const highlightColor =
-        convertedCount > 0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,100,100,0.3)';
-      const defDecoration = vscode.window.createTextEditorDecorationType({
-        backgroundColor: highlightColor,
-      });
-      const currentEditor = vscode.window.activeTextEditor;
-      if (currentEditor) {
-        currentEditor.setDecorations(defDecoration, [functionRange]);
-        await new Promise((r) => setTimeout(r, highlightDelay));
-        defDecoration.dispose();
-      }
-    }
-  }
-}
-
 export async function convertCommandHandler(...args: any[]): Promise<void> {
   const context = utils.getWorkspaceContext();
   if (!context) return;
@@ -205,202 +130,26 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     }
 
     // Find function declaration or function expression at cursor
-    let targetFunction: any = null;
-    let targetVariableDeclaration: any = null;
-    const functions = sourceFile.getFunctions();
-    for (const f of functions) {
-      if (f.getStart() <= cursorOffset && cursorOffset <= f.getEnd()) {
-        targetFunction = f;
-        break;
-      }
-    }
-
-    if (!targetFunction) {
-      // check variable declarations for arrow or function expressions
-      const vars = sourceFile.getVariableDeclarations();
-      for (const v of vars) {
-        const init = v.getInitializer && v.getInitializer();
-        if (!init) continue;
-        const kind = init.getKind && init.getKind();
-        const isFunction =
-          kind === SyntaxKind.ArrowFunction ||
-          kind === SyntaxKind.FunctionExpression;
-        if (!isFunction) continue;
-
-        // Check if cursor is on the variable name or anywhere in the function
-        const varStart = v.getStart();
-        const varEnd = v.getEnd();
-        if (varStart <= cursorOffset && cursorOffset <= varEnd) {
-          targetFunction = init;
-          targetVariableDeclaration = v;
-          break;
-        }
-      }
-    }
-
-    if (!targetFunction) {
-      // check class methods
-      const classes = sourceFile.getClasses();
-      for (const cls of classes) {
-        const methods = cls.getMethods();
-        for (const method of methods) {
-          if (
-            method.getStart() <= cursorOffset &&
-            cursorOffset <= method.getEnd()
-          ) {
-            targetFunction = method;
-            break;
-          }
-        }
-        if (targetFunction) break;
-      }
-    }
-
-    if (!targetFunction) {
-      // Check object literal methods (e.g., Vue component methods)
-      const allNodes = sourceFile.getDescendantsOfKind(SyntaxKind.MethodDeclaration);
-      for (const method of allNodes) {
-        if (
-          method.getStart() <= cursorOffset &&
-          cursorOffset <= method.getEnd()
-        ) {
-          targetFunction = method;
-          break;
-        }
-      }
-    }
-
-    if (!targetFunction) {
-      void vscode.window.showInformationMessage(
-        'Objectify Params: Not on a function.'
-      );
+    const functionResult = functions.findTargetFunction(sourceFile, cursorOffset);
+    if (!functionResult) {
       return;
     }
 
-    const params = targetFunction.getParameters();
-    if (!params || params.length === 0) {
-      void vscode.window.showInformationMessage(
-        'Objectify Params: Function has zero parameters — nothing to convert.'
-      );
+    const { targetFunction, targetVariableDeclaration, params, fnName } = functionResult;
+
+    // Validate function can be converted
+    const isValid = await functions.validateFunction(targetFunction, params);
+    if (!isValid) {
       return;
     }
 
-    // Check for parameter properties (TypeScript constructor parameters with public/private/protected/readonly)
-    const hasParameterProperties = params.some((p: any) => {
-      try {
-        const scope = p.getScope && p.getScope();
-        const isReadonly = p.isReadonly && p.isReadonly();
-        return scope || isReadonly;
-      } catch {
-        return false;
-      }
-    });
-
-    if (hasParameterProperties) {
-      await vscode.window.showWarningMessage(
-        `Objectify Params\n\n⚠️ This function cannot be converted\n\n` +
-          `This function uses TypeScript parameter properties (public/private/protected/readonly).\n\n` +
-          `Converting would lose the automatic property assignment behavior.\n\n` +
-          `Parameter properties are only valid in constructors and automatically create class fields.`,
-        { modal: true }
-      );
+    // Extract parameter names (handling rest parameters)
+    const paramInfo = await functions.extractParameterNames(params);
+    if (!paramInfo) {
       return;
     }
 
-    // Check for TypeScript function overloads
-    const hasOverloads =
-      targetFunction.getOverloads && targetFunction.getOverloads().length > 0;
-    if (hasOverloads) {
-      await vscode.window.showWarningMessage(
-        `Objectify Params\n\n⚠️ This function cannot be converted\n\n` +
-          `This function uses TypeScript overload signatures.\n\n` +
-          `Converting the implementation signature would break the overload signatures, ` +
-          `which would need to be manually updated to match the new object parameter pattern.\n\n` +
-          `All overload signatures must be updated before converting the implementation.`,
-        { modal: true }
-      );
-      return;
-    }
-
-    // Check for rest parameters and extract tuple element names
-    let paramNames: string[] = [];
-    let isRestParameter = false;
-    let restTupleElements: string[] = [];
-
-    if (
-      params.length === 1 &&
-      params[0].isRestParameter &&
-      params[0].isRestParameter()
-    ) {
-      isRestParameter = true;
-      const restParam = params[0];
-      const restParamName = restParam.getName();
-      const typeNode = restParam.getTypeNode();
-
-      // Try to extract tuple element names from type like: [cmd: string, val: any]
-      if (typeNode) {
-        const typeText = typeNode.getText();
-        const tupleMatch = typeText.match(/\[([^\]]+)\]/);
-        if (tupleMatch) {
-          const elements = tupleMatch[1].split(',').map((e) => e.trim());
-          restTupleElements = elements
-            .map((e) => {
-              const colonIndex = e.indexOf(':');
-              return colonIndex > 0 ? e.substring(0, colonIndex).trim() : e;
-            })
-            .filter(Boolean);
-        }
-      }
-
-      // Show appropriate dialog based on whether we have named tuple elements
-      if (restTupleElements.length > 0) {
-        paramNames = restTupleElements;
-
-        const choice = await vscode.window.showWarningMessage(
-          `Objectify Params\n\n⚠️ Rest parameter conversion\n\n` +
-            `The rest parameter "...${restParamName}: [${restTupleElements.join(
-              ', '
-            )}]" will be converted to destructured parameters { ${paramNames.join(
-              ', '
-            )} }.\n\n` +
-            `⚠️ Important: You must manually update the function body:\n` +
-            `• Change ${restParamName}[0] → ${paramNames[0] || 'param'}\n` +
-            `• Change ${restParamName}[1] → ${paramNames[1] || 'param'}\n` +
-            `• etc.\n\n` +
-            `Continue with conversion?`,
-          { modal: true },
-          'Continue',
-          'Cancel'
-        );
-
-        if (choice !== 'Continue') {
-          void vscode.window.showInformationMessage(
-            'Objectify Params: Operation cancelled — no changes made.'
-          );
-          return;
-        }
-      } else {
-        await vscode.window.showWarningMessage(
-          `Objectify Params\n\n⚠️ This function cannot be converted\n\n` +
-            `The rest parameter "...${restParamName}" does not have named tuple elements.\n\n` +
-            `To convert, you need a tuple type with named elements:\n` +
-            `...${restParamName}: [param1: type1, param2: type2]\n\n` +
-            `Without named elements, the extension cannot determine how to map call arguments to object properties.`,
-          { modal: true },
-          'OK'
-        );
-        return;
-      }
-    } else {
-      paramNames = params.map((p: any) => p.getName());
-    }
-
-    let fnName = targetFunction.getName ? targetFunction.getName() : null;
-
-    // If arrow function or function expression assigned to variable, get name from variable
-    if (!fnName && targetVariableDeclaration) {
-      fnName = targetVariableDeclaration.getName();
-    }
+    const { isRestParameter, paramNames, restTupleElements } = paramInfo;
 
     const targetStart = targetFunction.getStart();
     const targetEnd = targetFunction.getEnd();
@@ -425,56 +174,6 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       );
       return;
     }
-
-    const transformFunctionText = (
-      fnText: string,
-      paramNames: string[],
-      paramTypeText: string,
-      isTypeScript: boolean
-    ) => {
-      const open = fnText.indexOf('(');
-      if (open < 0) return fnText;
-      let i = open + 1;
-      let depth = 1;
-      while (i < fnText.length && depth > 0) {
-        const ch = fnText[i];
-        if (ch === '(') depth++;
-        else if (ch === ')') depth--;
-        i++;
-      }
-      const close = i - 1;
-      const before = fnText.slice(0, open + 1);
-      const after = fnText.slice(close);
-
-      // Build destructured params with defaults preserved
-      // For rest parameters, use the extracted paramNames, not the original param names
-      let paramsWithDefaults: string;
-      if (isRestParameter) {
-        // Rest parameters don't have defaults, just use the tuple element names
-        paramsWithDefaults = paramNames.join(', ');
-      } else {
-        paramsWithDefaults = params
-          .map((p: any) => {
-            const name = p.getName();
-            const hasDefault = p.hasInitializer && p.hasInitializer();
-            if (hasDefault) {
-              const initializer = p.getInitializer();
-              const defaultValue = initializer
-                ? initializer.getText()
-                : undefined;
-              return defaultValue ? `${name} = ${defaultValue}` : name;
-            }
-            return name;
-          })
-          .join(', ');
-      }
-
-      const newParams = isTypeScript
-        ? `{ ${paramsWithDefaults} }: ${paramTypeText}`
-        : `{ ${paramsWithDefaults} }`;
-      const newFn = before + newParams + after;
-      return newFn;
-    };
 
     // Resolve target symbol
     const typeChecker = project.getTypeChecker();
@@ -1099,15 +798,17 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       const isTypeScript =
         sourceFile.getFilePath().endsWith('.ts') ||
         sourceFile.getFilePath().endsWith('.tsx');
-      const newFnText = transformFunctionText(
+      const newFnText = text.transformFunctionText(
         originalFunctionText,
+        params,
         paramNames,
         paramTypeText,
-        isTypeScript
+        isTypeScript,
+        isRestParameter
       );
 
       try {
-        await applyFunctionEditAndHighlight(
+        await text.applyFunctionEditAndHighlight(
           sourceFile,
           originalFunctionText,
           newFnText,
@@ -1632,16 +1333,18 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     const isTypeScript2 =
       sourceFile.getFilePath().endsWith('.ts') ||
       sourceFile.getFilePath().endsWith('.tsx');
-    const newFnText2 = transformFunctionText(
+    const newFnText2 = text.transformFunctionText(
       originalFunctionText,
+      params,
       paramNames,
       paramTypeText2,
-      isTypeScript2
+      isTypeScript2,
+      isRestParameter
     );
 
     try {
       const totalConverted = confirmed.length + acceptedFuzzy.length;
-      await applyFunctionEditAndHighlight(
+      await text.applyFunctionEditAndHighlight(
         sourceFile,
         originalFunctionText,
         newFnText2,
