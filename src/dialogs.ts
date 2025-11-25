@@ -87,10 +87,13 @@ export async function showFunctionConversionDialog(
           ? doc.positionAt(idx + signatureEnd)
           : doc.positionAt(targetStart + signatureEnd);
 
-      // Reveal the function near top
+      // Reveal the function near top (3 lines from top)
+      const topLine = Math.max(0, startPos.line - 3);
+      const topPos = new vscode.Position(topLine, 0);
+      editor.selection = new vscode.Selection(topPos, topPos);
       editor.revealRange(
-        new vscode.Range(startPos, startPos),
-        vscode.TextEditorRevealType.InCenter
+        new vscode.Range(topPos, topPos),
+        vscode.TextEditorRevealType.Default
       );
 
       // Show green highlight on the function signature only
@@ -179,9 +182,13 @@ export async function monitorConfirmedCalls(
       const editor = vscode.window.activeTextEditor;
 
       if (editor) {
+        // Reveal the call near top (3 lines from top)
+        const topLine = Math.max(0, startPos.line - 3);
+        const topPos = new vscode.Position(topLine, 0);
+        editor.selection = new vscode.Selection(topPos, topPos);
         editor.revealRange(
-          new vscode.Range(startPos, startPos),
-          vscode.TextEditorRevealType.InCenter
+          new vscode.Range(topPos, topPos),
+          vscode.TextEditorRevealType.Default
         );
 
         const repl = buildCallReplacement(c.exprText, c.argsText, paramNames);
@@ -272,9 +279,13 @@ export async function showNameCollisionDialog(
     const tempEditor = vscode.window.activeTextEditor;
 
     if (tempEditor) {
+      // Reveal the collision near top (3 lines from top)
+      const topLine = Math.max(0, callStartPos.line - 3);
+      const topPos = new vscode.Position(topLine, 0);
+      tempEditor.selection = new vscode.Selection(topPos, topPos);
       tempEditor.revealRange(
-        new vscode.Range(callStartPos, callStartPos),
-        vscode.TextEditorRevealType.InCenter
+        new vscode.Range(topPos, topPos),
+        vscode.TextEditorRevealType.Default
       );
 
       const collisionDecoration = vscode.window.createTextEditorDecorationType({
@@ -348,9 +359,13 @@ export async function reviewFuzzyCall(
       await vscode.window.showTextDocument(doc, { preview: true });
       const editor2 = vscode.window.activeTextEditor;
       if (editor2) {
+        // Reveal the fuzzy call near top (3 lines from top)
+        const topLine = Math.max(0, startPos.line - 3);
+        const topPos = new vscode.Position(topLine, 0);
+        editor2.selection = new vscode.Selection(topPos, topPos);
         editor2.revealRange(
-          new vscode.Range(startPos, startPos),
-          vscode.TextEditorRevealType.InCenter
+          new vscode.Range(topPos, topPos),
+          vscode.TextEditorRevealType.Default
         );
         // Show yellow (original) since we don't know user's choice yet
         editor2.setDecorations(highlightDecoration, [
@@ -364,9 +379,13 @@ export async function reviewFuzzyCall(
       if (editor2) {
         startPos = doc.positionAt(candidate.rangeStart);
         endPos = doc.positionAt(candidate.rangeEnd || candidate.rangeStart + 1);
+        // Reveal the fuzzy call near top (3 lines from top)
+        const topLine = Math.max(0, startPos.line - 3);
+        const topPos = new vscode.Position(topLine, 0);
+        editor2.selection = new vscode.Selection(topPos, topPos);
         editor2.revealRange(
-          new vscode.Range(startPos, startPos),
-          vscode.TextEditorRevealType.InCenter
+          new vscode.Range(topPos, topPos),
+          vscode.TextEditorRevealType.Default
         );
         // Show yellow (original) since we don't know user's choice yet
         editor2.setDecorations(highlightDecoration, [
