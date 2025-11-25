@@ -105,7 +105,7 @@ export async function showFunctionConversionDialog(
 
       // Show confirmation dialog
       const choice = await vscode.window.showInformationMessage(
-        'Showing preview of the new signature.',
+        'Objectify Params: Showing preview of the new signature.',
         { modal: true },
         'Continue'
       );
