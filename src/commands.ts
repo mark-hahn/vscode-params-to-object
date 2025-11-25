@@ -28,37 +28,18 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     // Ensure current file is in the project
     let sourceFile = project.getSourceFile(filePath);
-    let scriptOffset = 0; // Offset adjustment for Vue/Svelte files
-    
     if (!sourceFile) {
-      let fileContent = editor.document.getText();
-      
-      // For Vue/Svelte files, extract just the <script> section for ts-morph
-      if (filePath.endsWith('.vue') || filePath.endsWith('.svelte')) {
-        const scriptMatch = fileContent.match(/<script[^>]*>([\s\S]*?)<\/script>/);
-        if (scriptMatch) {
-          scriptOffset = scriptMatch.index! + scriptMatch[0].indexOf('>') + 1;
-          fileContent = scriptMatch[1];
-        }
-      }
-      
       sourceFile = project.createSourceFile(
         filePath,
-        fileContent,
+        editor.document.getText(),
         { overwrite: true }
       );
     }
 
     // Find function declaration or function expression at cursor
-    const adjustedCursorOffset = cursorOffset - scriptOffset;
-    log('Cursor offset adjustment:', {
-      cursorOffset,
-      scriptOffset,
-      adjustedCursorOffset
-    });
     const functionResult = functions.findTargetFunction(
       sourceFile,
-      adjustedCursorOffset
+      cursorOffset
     );
     if (!functionResult) {
       return;

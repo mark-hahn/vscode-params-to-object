@@ -36,18 +36,7 @@ export function findTargetFunction(
     const end = func.getEnd();
     if (start <= cursorOffset && cursorOffset <= end) {
       const range = end - start;
-      const funcKind = func.getKind && func.getKind();
-      const chosen = range < smallestRange;
-      log('considerFunction:', {
-        kind: funcKind,
-        start,
-        end,
-        range,
-        smallestRange,
-        chosen,
-        text: func.getText && func.getText().substring(0, 40)
-      });
-      if (chosen) {
+      if (range < smallestRange) {
         smallestRange = range;
         targetFunction = func;
         targetVariableDeclaration = varDecl;
@@ -60,7 +49,6 @@ export function findTargetFunction(
   
   // First check VariableDeclarations that have arrow/function initializers
   const allVarDecls = sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration);
-  log('Found', allVarDecls.length, 'variable declarations');
   for (const varDecl of allVarDecls) {
     const init = varDecl.getInitializer && varDecl.getInitializer();
     if (!init) continue;
@@ -72,13 +60,6 @@ export function findTargetFunction(
     
     const varStart = varDecl.getStart();
     const varEnd = varDecl.getEnd();
-    log('VarDecl with function:', {
-      name: varDecl.getName(),
-      varStart,
-      varEnd,
-      cursorOffset,
-      inRange: varStart <= cursorOffset && cursorOffset <= varEnd
-    });
     
     // If cursor is anywhere in the variable declaration (including the name),
     // consider the initializer function but use the variable declaration's range
@@ -88,27 +69,13 @@ export function findTargetFunction(
         smallestRange = range;
         targetFunction = init;
         targetVariableDeclaration = varDecl;
-        log('VarDecl chosen:', { name: varDecl.getName(), range, smallestRange });
       }
     }
   }
   
   // Check all ArrowFunctions
   const arrowFunctions = sourceFile.getDescendantsOfKind(SyntaxKind.ArrowFunction);
-  log('Found', arrowFunctions.length, 'arrow functions in file');
   for (const arrow of arrowFunctions) {
-    const start = arrow.getStart();
-    const end = arrow.getEnd();
-    const params = arrow.getParameters();
-    log('Arrow function:', {
-      start,
-      end,
-      cursorOffset,
-      inRange: start <= cursorOffset && cursorOffset <= end,
-      paramsCount: params.length,
-      text: arrow.getText().substring(0, 50)
-    });
-    
     // Find the variable declaration that contains this arrow function
     let varDecl = null;
     const parent = arrow.getParent();
@@ -149,15 +116,6 @@ export function findTargetFunction(
   }
 
   const params = targetFunction.getParameters();
-  
-  // Debug logging
-  log('findTargetFunction debug:', {
-    functionKind: targetFunction.getKind && targetFunction.getKind(),
-    functionText: targetFunction.getText && targetFunction.getText().substring(0, 100),
-    paramsLength: params ? params.length : 'null',
-    hasGetParameters: !!targetFunction.getParameters
-  });
-  
   if (!params || params.length === 0) {
     void vscode.window.showInformationMessage(
       'Objectify Params: Function has zero parameters — nothing to convert.'
