@@ -7,126 +7,9 @@ import * as utils from './utils';
 import * as parse from './parse';
 import * as functions from './functions';
 import * as text from './text';
+import * as dialogs from './dialogs';
 
 const { log } = utils.getLog('cmds');
-
-// Helper function to monitor and show confirmed calls
-async function monitorConfirmedCalls(
-  confirmed: any[],
-  totalCalls: number,
-  startIdx: number,
-  paramNames: string[],
-  highlightDelay: number,
-  originalEditor: vscode.TextEditor | undefined,
-  originalSelection: vscode.Selection | undefined
-): Promise<boolean> {
-  const buildReplacement = (exprText: string, argsTextArr: string[]) => {
-    const props = paramNames
-      .map((name, idx) => {
-        const aText =
-          argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-        if (aText === name) return `${name}`;
-        return `${name}:${aText}`;
-      })
-      .join(', ');
-    return `${exprText}({ ${props} })`;
-  };
-
-  const yellowDecoration = vscode.window.createTextEditorDecorationType({
-    backgroundColor: 'rgba(255,255,0,0.4)',
-  });
-  const greenDecoration = vscode.window.createTextEditorDecorationType({
-    backgroundColor: 'rgba(100,255,100,0.3)',
-  });
-
-  let callIdx = startIdx;
-  for (const c of confirmed) {
-    callIdx++;
-
-    try {
-      const doc = await vscode.workspace.openTextDocument(c.filePath);
-      const startPos = doc.positionAt(c.start);
-      const endPos = doc.positionAt(c.end);
-
-      await vscode.window.showTextDocument(doc, { preview: true });
-      const editor = vscode.window.activeTextEditor;
-
-      if (editor) {
-        const topLine = Math.max(0, startPos.line - 5);
-        const topPos = new vscode.Position(topLine, 0);
-        editor.revealRange(
-          new vscode.Range(topPos, topPos),
-          vscode.TextEditorRevealType.AtTop
-        );
-
-        const repl = buildReplacement(c.exprText, c.argsText);
-
-        // Apply the edit temporarily to show preview
-        const priorSelections = editor.selections.slice();
-        const priorVisibleRanges = editor.visibleRanges.slice();
-        
-        await editor.edit((editBuilder) => {
-          editBuilder.replace(new vscode.Range(startPos, endPos), repl);
-        });
-
-        // Show green highlight on the converted code
-        const newEndPos = doc.positionAt(c.start + repl.length);
-        editor.setDecorations(greenDecoration, [
-          new vscode.Range(startPos, newEndPos),
-        ]);
-
-        // Show dialog while preview is visible
-        const choice = await vscode.window.showInformationMessage(
-          `Objectify Params: Processed function call ${callIdx} of ${totalCalls}.`,
-          { modal: true },
-          'Next'
-        );
-
-        // Undo the preview edit
-        await vscode.commands.executeCommand('undo');
-
-        // Clear green highlight after undo
-        editor.setDecorations(greenDecoration, []);
-
-        // Restore editor state
-        try {
-          editor.selections = priorSelections;
-        } catch (e) {}
-        try {
-          if (priorVisibleRanges && priorVisibleRanges.length)
-            editor.revealRange(
-              priorVisibleRanges[0],
-              vscode.TextEditorRevealType.Default
-            );
-        } catch (e) {}
-
-        if (choice === undefined) {
-          yellowDecoration.dispose();
-          greenDecoration.dispose();
-          void vscode.window.showInformationMessage(
-            'Objectify Params: Operation cancelled — no changes made.'
-          );
-          if (originalEditor && originalSelection) {
-            await vscode.window.showTextDocument(originalEditor.document, {
-              selection: originalSelection,
-              preserveFocus: false,
-            });
-          }
-          return true; // aborted
-        }
-
-        // Continue to next call
-      }
-    } catch (e) {
-      log('Error showing monitor preview:', e);
-    }
-  }
-
-  yellowDecoration.dispose();
-  greenDecoration.dispose();
-
-  return false; // not aborted
-}
 
 export async function convertCommandHandler(...args: any[]): Promise<void> {
   const context = utils.getWorkspaceContext();
@@ -304,7 +187,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
       // Check if monitor conversions is enabled (already retrieved above)
       if (monitorConversions) {
-        aborted = await monitorConfirmedCalls(
+        aborted = await dialogs.monitorConfirmedCalls(
           confirmed,
           confirmed.length,
           0,
@@ -430,15 +313,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     // Process fuzzy calls first, then confirmed calls (when monitoring is enabled)
 
-    const highlightDecoration = vscode.window.createTextEditorDecorationType({
-      backgroundColor: 'rgba(255,255,0,0.4)',
-    });
-    const greenDecoration = vscode.window.createTextEditorDecorationType({
-      backgroundColor: 'rgba(100,255,100,0.3)',
-    });
-    const redDecoration = vscode.window.createTextEditorDecorationType({
-      backgroundColor: 'rgba(255,100,100,0.3)',
-    });
+    log(
+      'monitorConversions:',
+      monitorConversions,
+      'confirmed.length:',
+      confirmed.length
+    );
+
     const totalCalls = confirmed.length + fuzzy.length;
     const totalFuzzy = fuzzy.length;
     let callIdx = 0; // Start fuzzy calls at index 1
@@ -448,140 +329,26 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
       // Handle name collisions
       if (candidate.reason === 'name-collision') {
-        const conflictFile = candidate.filePath;
-        log('Name collision detected in', conflictFile);
-
-        try {
-          const doc = await vscode.workspace.openTextDocument(conflictFile);
-          const callStartPos = doc.positionAt(candidate.start);
-          const callEndPos = doc.positionAt(candidate.end);
-
-          await vscode.window.showTextDocument(doc, { preview: true });
-          const tempEditor = vscode.window.activeTextEditor;
-
-          if (tempEditor) {
-            const topLine = Math.max(0, callStartPos.line - 5);
-            const topPos = new vscode.Position(topLine, 0);
-            tempEditor.revealRange(
-              new vscode.Range(topPos, topPos),
-              vscode.TextEditorRevealType.AtTop
-            );
-
-            const collisionDecoration =
-              vscode.window.createTextEditorDecorationType({
-                backgroundColor: 'rgba(255,100,100,0.3)',
-                border: '1px solid rgba(255,100,100,0.8)',
-              });
-            tempEditor.setDecorations(collisionDecoration, [
-              new vscode.Range(callStartPos, callEndPos),
-            ]);
-
-            const choice = await vscode.window.showWarningMessage(
-              `Objectify Params: Cannot convert function.\n\nName collision detected. A call to a different function with the same name was found. Operation will be cancelled.`,
-              { modal: true },
-              'OK'
-            );
-
-            collisionDecoration.dispose();
-            highlightDecoration.dispose();
-            greenDecoration.dispose();
-            redDecoration.dispose();
-
-            // Restore original editor
-            if (originalEditor && originalSelection) {
-              await vscode.window.showTextDocument(originalEditor.document, {
-                selection: originalSelection,
-                preserveFocus: false,
-              });
-            }
-
-            log('Aborting conversion due to name collision');
-            return;
-          }
-        } catch (e) {
-          log('Error showing collision warning', e);
-        }
-      }
-      let doc: vscode.TextDocument | undefined;
-      let startPos: vscode.Position | undefined;
-      let endPos: vscode.Position | undefined;
-      if (
-        candidate.filePath &&
-        typeof candidate.start === 'number' &&
-        typeof candidate.end === 'number'
-      ) {
-        doc = await vscode.workspace.openTextDocument(candidate.filePath);
-        startPos = doc.positionAt(candidate.start);
-        endPos = doc.positionAt(candidate.end);
-        await vscode.window.showTextDocument(doc, { preview: true });
-        const editor2 = vscode.window.activeTextEditor;
-        if (editor2) {
-          const topLine = Math.max(0, startPos.line - 6);
-          const topPos = new vscode.Position(topLine, 0);
-          editor2.revealRange(
-            new vscode.Range(topPos, topPos),
-            vscode.TextEditorRevealType.AtTop
-          );
-          // Show yellow (original) since we don't know user's choice yet
-          editor2.setDecorations(highlightDecoration, [
-            new vscode.Range(startPos, endPos),
-          ]);
-        }
-      } else if (
-        candidate.filePath &&
-        typeof candidate.rangeStart === 'number'
-      ) {
-        doc = await vscode.workspace.openTextDocument(candidate.filePath);
-        await vscode.window.showTextDocument(doc, { preview: true });
-        const editor2 = vscode.window.activeTextEditor;
-        if (editor2) {
-          startPos = doc.positionAt(candidate.rangeStart);
-          endPos = doc.positionAt(
-            candidate.rangeEnd || candidate.rangeStart + 1
-          );
-          const topLine = Math.max(0, startPos.line - 6);
-          const topPos = new vscode.Position(topLine, 0);
-          editor2.revealRange(
-            new vscode.Range(topPos, topPos),
-            vscode.TextEditorRevealType.AtTop
-          );
-          // Show yellow (original) since we don't know user's choice yet
-          editor2.setDecorations(highlightDecoration, [
-            new vscode.Range(startPos, endPos),
-          ]);
+        const shouldAbort = await dialogs.showNameCollisionDialog(
+          candidate,
+          originalEditor,
+          originalSelection
+        );
+        if (shouldAbort) {
+          return;
         }
       }
 
-      // Check if converting this call would lose arguments
-      const argCount = candidate.argsText ? candidate.argsText.length : 0;
-      const willLoseArgs = argCount > paramNames.length;
-
-      let choice: string | undefined;
-      
-      // Build message based on reason
-      let message = `Objectify Params: Processing function call ${callIdx} of ${totalCalls}.\n\n`;
-      
-      if (willLoseArgs) {
-        message += `This call has more arguments than the function has parameters and data would be lost. Should it be converted?`;
-      } else if (candidate.reason === 'too-many-args') {
-        message += `This call has more arguments than the function has parameters and data would be lost. Should it be converted?`;
-      } else {
-        message += `Is this a call to the correct function? Should it be converted?`;
-      }
-
-      choice = await vscode.window.showInformationMessage(
-        message,
-        { modal: true },
-        'Convert',
-        'Skip'
+      // Review the fuzzy call with user
+      const reviewResult = await dialogs.reviewFuzzyCall(
+        candidate,
+        callIdx,
+        totalCalls,
+        paramNames,
+        highlightDelay
       );
 
-      // Handle cancel (×) button - abort entire conversion
-      if (choice === undefined) {
-        log('User clicked cancel (×) in validation dialog');
-        highlightDecoration.dispose();
-        greenDecoration.dispose();
-        redDecoration.dispose();
+      if (reviewResult === 'abort') {
         void vscode.window.showInformationMessage(
           'Objectify Params: Operation cancelled — no changes made.'
         );
@@ -594,147 +361,26 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         return;
       }
 
-      // Change color based on choice
-      const currentEditor = vscode.window.activeTextEditor;
-      if (currentEditor && startPos && endPos) {
-        // Clear previous decorations
-        currentEditor.setDecorations(highlightDecoration, []);
-        currentEditor.setDecorations(greenDecoration, []);
-        currentEditor.setDecorations(redDecoration, []);
-
-        // Show post-dialog preview if delay > 0
-        if (highlightDelay > 0) {
-          if (choice === 'Convert') {
-            // Green for will convert
-            currentEditor.setDecorations(greenDecoration, [
-              new vscode.Range(startPos, endPos),
-            ]);
-          } else {
-            // Red for won't convert
-            currentEditor.setDecorations(redDecoration, [
-              new vscode.Range(startPos, endPos),
-            ]);
-          }
-          await new Promise((r) => setTimeout(r, highlightDelay));
-        }
-      }
-
-      if (choice !== 'Convert') {
-        if (currentEditor) {
-          currentEditor.setDecorations(redDecoration, []);
-        }
-        // Skip this call and continue with the rest
+      if (reviewResult === 'skip') {
         continue;
-      }
-
-      // Clear green decoration after delay
-      if (currentEditor) {
-        currentEditor.setDecorations(greenDecoration, []);
       }
 
       // User chose to convert this fuzzy call
       acceptedFuzzy.push(candidate);
 
-      try {
-        if (
-          candidate.argsText &&
-          candidate.argsText.length >= paramNames.length
-        ) {
-          const props = paramNames
-            .map((name, idx) => {
-              const aText = candidate.argsText[idx]
-                ? candidate.argsText[idx]
-                : 'undefined';
-              if (aText === name) return `${name}`;
-              return `${name}:${aText}`;
-            })
-            .join(', ');
-          const repl = `${candidate.exprText}({ ${props} })`;
-
-          // Only show preview if highlightDelay > 0
-          if (highlightDelay > 0) {
-            const visibleEditors = vscode.window.visibleTextEditors || [];
-            let targetEditor = visibleEditors.find(
-              (e) => e.document && e.document.fileName === candidate.filePath
-            );
-            if (!targetEditor) {
-              try {
-                const docToOpen = await vscode.workspace.openTextDocument(
-                  candidate.filePath
-                );
-                targetEditor = await vscode.window.showTextDocument(docToOpen, {
-                  preview: true,
-                });
-              } catch (e) {
-                const activeEditor =
-                  vscode.window.activeTextEditor || originalEditor;
-                if (
-                  activeEditor &&
-                  activeEditor.document &&
-                  activeEditor.document.fileName === candidate.filePath
-                )
-                  targetEditor = activeEditor;
-              }
-            }
-
-            if (targetEditor) {
-              const doc = targetEditor.document;
-              const startP = doc.positionAt(candidate.start);
-              const endP = doc.positionAt(candidate.end);
-              const priorSelections = targetEditor.selections.slice();
-              const priorVisibleRanges = targetEditor.visibleRanges.slice();
-              try {
-                targetEditor.setDecorations(highlightDecoration, []);
-              } catch (e) {}
-              try {
-                targetEditor.setDecorations(greenDecoration, []);
-              } catch (e) {}
-              await targetEditor.edit((editBuilder) => {
-                editBuilder.replace(new vscode.Range(startP, endP), repl);
-              });
-              const callRange = new vscode.Range(
-                startP,
-                doc.positionAt(candidate.start + repl.length)
-              );
-              targetEditor.setDecorations(greenDecoration, [callRange]);
-              await new Promise((r) => setTimeout(r, highlightDelay));
-              await vscode.commands.executeCommand('undo');
-              try {
-                targetEditor.setDecorations(highlightDecoration, []);
-              } catch (e) {}
-              try {
-                targetEditor.setDecorations(greenDecoration, []);
-              } catch (e) {}
-              try {
-                targetEditor.setDecorations(redDecoration, []);
-              } catch (e) {}
-              try {
-                targetEditor.selections = priorSelections;
-              } catch (e) {}
-              try {
-                if (priorVisibleRanges && priorVisibleRanges.length)
-                  targetEditor.revealRange(
-                    priorVisibleRanges[0],
-                    vscode.TextEditorRevealType.Default
-                  );
-              } catch (e) {}
-            } else {
-              const previewText = repl;
-              void vscode.window.showInformationMessage(
-                `Preview: ${previewText}`
-              );
-            }
-          }
-        }
-      } catch (e) {
-        log('preview error', e);
-      }
+      // Show preview of the conversion
+      await dialogs.showFuzzyConversionPreview(
+        candidate,
+        paramNames,
+        highlightDelay,
+        originalEditor
+      );
     }
 
     // If monitoring, show preview for confirmed calls AFTER fuzzy calls
     if (monitorConversions && confirmed.length > 0 && !aborted) {
       log('Entering confirmed monitoring block');
-      aborted = await monitorConfirmedCalls(
+      aborted = await dialogs.monitorConfirmedCalls(
         confirmed,
         totalCalls,
         fuzzy.length,
