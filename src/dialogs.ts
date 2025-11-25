@@ -102,7 +102,7 @@ export async function showFunctionConversionDialog(
 
       // Show confirmation dialog
       const choice = await vscode.window.showInformationMessage(
-        'Converting function parameters.',
+        'Showing preview of the new signature.',
         { modal: true },
         'Continue'
       );
