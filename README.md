@@ -1,10 +1,10 @@
-# Objectify Params
+## Objectify Params
 
-Automatically refactor a JavaScript or TypeScript function to use object parameters instead of multiple positional parameters. This improves readability and makes your code more maintainable and easier to extend.
+Automatically refactor JavaScript or TypeScript functions to use object parameters instead of multiple positional parameters, improving readability and maintainability.
 
-## Features
+### Features
 
-- **Automatic Refactoring**: Converts the function signature and all call sites across your workspace
+- **Automatic Refactoring**: Converts function signature and all call sites across your workspace
 - **Smart Detection**: Identifies confirmed safe conversions and asks about uncertain cases
 - **Preview Mode**: Optional preview dialogs to review each change before applying
 - **Workspace-Wide**: Scans and updates all matching files in your project
@@ -14,14 +14,14 @@ Automatically refactor a JavaScript or TypeScript function to use object paramet
 
 *Objectifying One Function's Parameter List. Preview walkthrough is optional.*
 
-## Usage
+### Usage
 
 1. Place your cursor inside a function definition.
-2. Right-click and select **"Objectify Parameters"** or use the Command Palette.  You can assign your own hot-key.
+2. Right-click and select **"Objectify Parameters"** or use the Command Palette. You can assign your own hot-key.
 3. Review any uncertain conversions in interactive dialogs.
 4. The extension updates both the function signature and all call sites.
 
-### Before
+#### Before
 ```typescript
 function createUser(name: string, age: number, email?: string) {
   return { name, age, email };
@@ -31,7 +31,7 @@ createUser("Alice", 30, "alice@example.com");
 createUser("Bob", 25);
 ```
 
-### After
+#### After
 ```typescript
 function createUser({ name, age, email }: { name: string; age: number; email?: string }) {
   return { name, age, email };
@@ -41,32 +41,32 @@ createUser({ name: "Alice", age: 30, email: "alice@example.com" });
 createUser({ name: "Bob", age: 25 });
 ```
 
-## Configuration
+### Configuration
 
 Access settings via **File > Preferences > Settings** and search for "Objectify Parameters":
 
-### `objectifyParams.include`
+#### `objectifyParams.include`
 - **Type**: `string`
 - **Default**: `"**/*.ts **/*.js"`
 - Space-separated glob patterns of files to scan
 
-### `objectifyParams.exclude`
+#### `objectifyParams.exclude`
 - **Type**: `string`
 - **Default**: `"**/node_modules/**"`
 - Space-separated glob patterns to exclude
 
-### `objectifyParams.monitorConversions`
+#### `objectifyParams.monitorConversions`
 - **Type**: `boolean`
 - **Default**: `false`
 - Show preview dialog for every call conversion (including confirmed safe calls)
 
-### `objectifyParams.highlightDelay`
+#### `objectifyParams.highlightDelay`
 - **Type**: `number`
 - **Default**: `500`
 - **Range**: 0-5000ms
 - Duration to show preview highlights. Set to `0` to show only the dialog without delay
 
-## How It Works
+### How It Works
 
 1. **Scanning**: Searches your workspace for all references to the function
 2. **Classification**: Categorizes calls as:
@@ -77,40 +77,40 @@ Access settings via **File > Preferences > Settings** and search for "Objectify 
 4. **Application**: Updates function signature and all approved call sites
 5. **Verification**: Highlights the updated function signature
 
-## Supported File Types
+### Supported File Types
 
 - TypeScript (`.ts`, `.tsx`, `.mts`, `.cts`)
 - JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`)
 - Vue (`.vue`)
 - Svelte (`.svelte`)
 
-## Requirements
+### Requirements
 
 - VS Code 1.50.0 or higher
 - Works with both JavaScript and TypeScript projects
 
-## Known Limitations
+### Known Limitations
 
 - Cannot convert functions called with `.call()`, `.apply()`, or `.bind()`
 - Cannot convert functions called with spread arguments (`...args`)
 - Rest parameters must use tuple syntax for type preservation
 
-## Tips
+### Tips
 
 - **Monitor Mode**: Enable `monitorConversions` to review every conversion step-by-step
 - **Fast Mode**: Set `highlightDelay` to `0` for instant dialogs without preview delays
 - **Selective Scanning**: Adjust `include` patterns to limit scope for faster processing
 - **Undo Support**: All changes are applied through VS Code's undo system
 
-## License
+### License
 
 MIT
 
-## Links
+### Links
 
 - [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=eridien.objectify-params)
 - [GitHub Repository](https://github.com/mark-hahn/vscode-objectify-params)
 
-## Contributing
+### Contributing
 
 Issues and pull requests welcome at the [GitHub repository](https://github.com/mark-hahn/vscode-objectify-params).
