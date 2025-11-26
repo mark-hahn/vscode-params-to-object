@@ -364,12 +364,27 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         'file(s) - files are marked dirty, user can save manually'
       );
 
+      // Calculate offset shift from edits in same file that came before the function
+      let offsetShift = 0;
+      
+      // Use URI fsPath for consistent path comparison
+      const targetFilePath = vscode.Uri.file(filePath).fsPath;
+      
+      for (const c of confirmed) {
+        const callFilePath = vscode.Uri.file(c.filePath).fsPath;
+        if (callFilePath === targetFilePath && c.end <= targetStart) {
+          const orig = c.end - c.start;
+          const repl = buildReplacement(c.exprText, c.argsText).length;
+          offsetShift += repl - orig;
+        }
+      }
+
       // Highlight the converted function signature
       try {
         await text.highlightConvertedFunction(
           filePath,
-          targetStart,
-          targetEnd,
+          targetStart + offsetShift,
+          targetEnd + offsetShift,
           newFnText,
           originalEditor,
           originalSelection,
