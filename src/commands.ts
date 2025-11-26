@@ -582,15 +582,56 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     );
 
     if (allCandidates.length === 0) {
-      log('No candidates to convert after fuzzy review');
-      void vscode.window.showInformationMessage(
-        'Objectify Params: No calls were converted.'
+      log('No candidates to convert after fuzzy review - converting function signature only');
+      
+      // Build function signature edit
+      const paramTypeText = parse.extractParameterTypes(
+        params,
+        paramNames,
+        sourceFile,
+        isRestParameter,
+        restTupleElements
       );
-      if (originalEditor && originalSelection)
-        await vscode.window.showTextDocument(originalEditor.document, {
-          selection: originalSelection,
-          preserveFocus: false,
-        });
+      const isTypeScript =
+        sourceFile.getFilePath().endsWith('.ts') ||
+        sourceFile.getFilePath().endsWith('.tsx');
+      const newFnText = text.transformFunctionText(
+        originalFunctionText,
+        params,
+        paramNames,
+        paramTypeText,
+        isTypeScript,
+        isRestParameter
+      );
+
+      const edit = new vscode.WorkspaceEdit();
+      const uri = vscode.Uri.file(filePath);
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const startPos = doc.positionAt(targetStart);
+      const endPos = doc.positionAt(targetEnd);
+      edit.replace(uri, new vscode.Range(startPos, endPos), newFnText);
+
+      const success = await vscode.workspace.applyEdit(edit);
+      if (success) {
+        // Highlight the converted function signature
+        try {
+          await text.highlightConvertedFunction(
+            filePath,
+            targetStart,
+            targetEnd,
+            newFnText,
+            originalEditor,
+            originalSelection,
+            highlightDelay
+          );
+        } catch (e) {
+          log('error highlighting function', e);
+        }
+
+        void vscode.window.showInformationMessage(
+          'Objectify Params: No calls were converted.'
+        );
+      }
       return;
     }
 
