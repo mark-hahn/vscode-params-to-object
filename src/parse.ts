@@ -459,13 +459,19 @@ export async function collectCalls(
             const isCollision = !isMatch;
 
             if (isCollision) {
+              // Extract arguments before storing collision
+              const args = call.getArguments();
+              const argsText = args.map((a: any) =>
+                a ? a.getText() : 'undefined'
+              );
+              
               // Store name collision for later processing
               fuzzy.push({
                 filePath: sf.getFilePath(),
                 start: call.getStart(),
                 end: call.getEnd(),
                 exprText: expr.getText(),
-                argsText: [],
+                argsText: argsText,
                 reason: 'name-collision',
                 score: 1,
               });
