@@ -1,8 +1,10 @@
 bugs...
 
 todo ...
-  
+  allow functions matching in separate files
+
 testing ...
+  functions matching in separate files
   svelte
   params
     default

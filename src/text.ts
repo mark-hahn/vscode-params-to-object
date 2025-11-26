@@ -198,6 +198,7 @@ export async function applyCallEdits(
 export async function highlightConvertedFunction(
   filePath: string,
   targetStart: number,
+  targetEnd: number,
   newFnText: string,
   originalEditor: vscode.TextEditor | undefined,
   originalSelection: vscode.Selection | undefined,
@@ -206,26 +207,20 @@ export async function highlightConvertedFunction(
   const uri = vscode.Uri.file(filePath);
   const doc = await vscode.workspace.openTextDocument(uri);
   
-  // Calculate signature end
-  let parenDepth = 0;
-  let signatureEnd = 0;
-  for (let i = 0; i < newFnText.length; i++) {
-    if (newFnText[i] === '(') parenDepth++;
-    if (newFnText[i] === ')') {
-      parenDepth--;
-      if (parenDepth === 0) {
-        const remaining = newFnText.substring(i + 1);
-        const braceIdx = remaining.indexOf('{');
-        signatureEnd = braceIdx >= 0 ? i + 1 + braceIdx : i + 1;
-        break;
-      }
+  // Calculate signature end (find the last brace on the first line for function body)
+  // The parameter list may contain { } for object destructuring
+  let signatureLength = newFnText.length;
+  const lines = newFnText.split('\n');
+  if (lines.length > 0) {
+    const firstLine = lines[0];
+    const lastBraceIdx = firstLine.lastIndexOf('{');
+    if (lastBraceIdx >= 0) {
+      signatureLength = lastBraceIdx;
     }
   }
-  if (signatureEnd === 0) signatureEnd = newFnText.indexOf('{');
-  if (signatureEnd <= 0) signatureEnd = newFnText.length;
 
   const startPos = doc.positionAt(targetStart);
-  const endPos = doc.positionAt(targetStart + signatureEnd);
+  const endPos = doc.positionAt(targetStart + signatureLength);
 
   if (highlightDelay > 0) {
     await vscode.window.showTextDocument(doc, { preview: false });

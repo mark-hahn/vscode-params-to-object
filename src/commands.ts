@@ -356,6 +356,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         await text.highlightConvertedFunction(
           filePath,
           targetStart,
+          targetEnd,
           newFnText,
           originalEditor,
           originalSelection,
@@ -453,21 +454,6 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
     const acceptedFuzzy: typeof fuzzy = []; // Track which fuzzy calls were accepted
     for (const candidate of fuzzy) {
       callIdx++;
-
-      // Handle name collisions
-      if (candidate.reason === 'name-collision') {
-        const shouldAbort = await dialogs.showNameCollisionDialog(
-          candidate,
-          originalEditor,
-          originalSelection
-        );
-        if (shouldAbort) {
-          void vscode.window.showInformationMessage(
-            'Objectify Params: Operation cancelled — no changes made.'
-          );
-          return;
-        }
-      }
 
       // Review the fuzzy call with user
       const reviewResult = await dialogs.reviewFuzzyCall(
@@ -580,8 +566,36 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       return;
     }
 
+    // Build function signature edit first (before applying any edits)
+    const paramTypeText2 = parse.extractParameterTypes(
+      params,
+      paramNames,
+      sourceFile,
+      isRestParameter,
+      restTupleElements
+    );
+    const isTypeScript2 =
+      sourceFile.getFilePath().endsWith('.ts') ||
+      sourceFile.getFilePath().endsWith('.tsx');
+    const newFnText2 = text.transformFunctionText(
+      originalFunctionText,
+      params,
+      paramNames,
+      paramTypeText2,
+      isTypeScript2,
+      isRestParameter
+    );
+    
+    // Add function signature edit to the WorkspaceEdit
+    const funcUri = vscode.Uri.file(filePath);
+    const funcDoc = await vscode.workspace.openTextDocument(funcUri);
+    const funcStartPos = funcDoc.positionAt(targetStart);
+    const funcEndPos = funcDoc.positionAt(targetEnd);
+    editAll.replace(funcUri, new vscode.Range(funcStartPos, funcEndPos), newFnText2);
+    log('Added function signature edit at offsets', targetStart, '-', targetEnd);
+
     const replAllMap = new Map<string, string>();
-    log('=== MIXED PATH: About to apply', allCandidates.length, 'edits ===');
+    log('=== MIXED PATH: About to apply', allCandidates.length, 'call edits ===');
     for (const c of allCandidates) {
       if (
         c.filePath &&
@@ -642,41 +656,19 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       'file(s) - files are marked dirty, user can save manually'
     );
 
-    const paramTypeText2 = parse.extractParameterTypes(
-      params,
-      paramNames,
-      sourceFile,
-      isRestParameter,
-      restTupleElements
-    );
-
-    const isTypeScript2 =
-      sourceFile.getFilePath().endsWith('.ts') ||
-      sourceFile.getFilePath().endsWith('.tsx');
-    const newFnText2 = text.transformFunctionText(
-      originalFunctionText,
-      params,
-      paramNames,
-      paramTypeText2,
-      isTypeScript2,
-      isRestParameter
-    );
-
+    // Highlight the converted function signature
     try {
-      const totalConverted = confirmed.length + acceptedFuzzy.length;
-      await text.applyFunctionEditAndHighlight(
-        sourceFile,
-        originalFunctionText,
-        newFnText2,
+      await text.highlightConvertedFunction(
+        filePath,
         targetStart,
         targetEnd,
+        newFnText2,
         originalEditor,
         originalSelection,
-        highlightDelay,
-        totalConverted
+        highlightDelay
       );
     } catch (e) {
-      log('error applying function text edit (all)', e);
+      log('error highlighting function (mixed path)', e);
     }
 
     void vscode.window.showInformationMessage(

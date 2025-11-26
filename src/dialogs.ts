@@ -68,26 +68,25 @@ export async function showFunctionConversionDialog(
         );
       });
 
-      // Calculate the signature range in the CONVERTED function (up to the opening brace or line end)
-      let signatureEnd = 0;
-      const braceIdx = newFunctionText.indexOf('{');
-      const newlineIdx = newFunctionText.indexOf('\n');
-      
-      if (braceIdx >= 0 && (newlineIdx < 0 || braceIdx < newlineIdx)) {
-        // Function on one line: highlight up to the opening brace
-        signatureEnd = braceIdx;
-      } else if (newlineIdx >= 0) {
-        // Multi-line function: highlight only the first line
-        signatureEnd = newlineIdx;
-      } else {
-        // No brace or newline found: highlight the whole thing
-        signatureEnd = newFunctionText.length;
+      // Calculate the signature range in the CONVERTED function (up to the function body's opening brace)
+      // Need to find the LAST brace before a newline, or the last brace overall
+      // The parameter list may contain { } for object destructuring
+      let signatureEnd = newFunctionText.length;
+      const lines = newFunctionText.split('\n');
+      if (lines.length > 0) {
+        const firstLine = lines[0];
+        const lastBraceIdx = firstLine.lastIndexOf('{');
+        if (lastBraceIdx >= 0) {
+          signatureEnd = lastBraceIdx;
+        }
       }
 
-      const convertedSignatureEndPos =
-        idx >= 0
-          ? doc.positionAt(idx + signatureEnd)
-          : doc.positionAt(targetStart + signatureEnd);
+      // Get the updated document after the edit
+      const updatedDoc = editor.document;
+      const convertedStartPos = startPos; // Start position hasn't changed
+      const convertedSignatureEndPos = updatedDoc.positionAt(
+        updatedDoc.offsetAt(convertedStartPos) + signatureEnd
+      );
 
       // Reveal the function near top (3 lines from top)
       const topLine = Math.max(0, startPos.line - 3);
