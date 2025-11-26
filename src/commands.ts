@@ -171,6 +171,24 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         isRestParameter
       );
 
+      // Show preview dialog if enabled
+      let aborted = false;
+      if (showPreviews) {
+        aborted = await dialogs.showFunctionConversionDialog(
+          filePath,
+          targetStart,
+          targetEnd,
+          originalFunctionText,
+          newFnText,
+          originalEditor,
+          originalSelection
+        );
+      }
+
+      if (aborted) {
+        return;
+      }
+
       const edit = new vscode.WorkspaceEdit();
       const uri = vscode.Uri.file(filePath);
       const doc = await vscode.workspace.openTextDocument(uri);
@@ -180,30 +198,25 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
       const success = await vscode.workspace.applyEdit(edit);
       if (success) {
-        // Flash the converted function for 1 second
-        if (originalEditor) {
-          await vscode.window.showTextDocument(originalEditor.document, {
-            selection: new vscode.Selection(startPos, startPos),
-            preserveFocus: false,
-          });
-
-          const flashDecoration = vscode.window.createTextEditorDecorationType({
-            backgroundColor: 'rgba(100,255,100,0.3)',
-            border: '1px solid rgba(100,255,100,0.8)',
-          });
-
-          originalEditor.setDecorations(flashDecoration, [
-            new vscode.Range(
-              startPos,
-              doc.positionAt(targetStart + newFnText.length)
-            ),
-          ]);
-          await new Promise((r) => setTimeout(r, highlightDelay));
-          flashDecoration.dispose();
+        if (!showPreviews) {
+          // Highlight the converted function signature
+          try {
+            await text.highlightConvertedFunction(
+              filePath,
+              targetStart,
+              targetEnd,
+              newFnText,
+              originalEditor,
+              originalSelection,
+              highlightDelay
+            );
+          } catch (e) {
+            log('error highlighting function', e);
+          }
         }
 
         void vscode.window.showInformationMessage(
-          `Objectify Params: Updated function signature (no calls found in workspace).`
+          `Objectify Params: Converted function but no calls were found.`
         );
       }
       return;
