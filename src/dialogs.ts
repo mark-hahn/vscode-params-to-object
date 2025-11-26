@@ -556,6 +556,13 @@ export async function showFuzzyConversionPreview(
           );
       } catch (e) {}
     }
+    
+    // Restore original editor context (where the function definition is)
+    if (originalEditor) {
+      await vscode.window.showTextDocument(originalEditor.document, {
+        preserveFocus: false,
+      });
+    }
   } catch (e) {
     log('preview error', e);
   } finally {
