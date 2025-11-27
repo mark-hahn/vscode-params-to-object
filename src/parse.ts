@@ -243,7 +243,9 @@ export async function collectCalls(
   paramNames: string[],
   originalEditor: vscode.TextEditor,
   originalSelection: vscode.Selection,
-  sourceFilePath: string
+  sourceFilePath: string,
+  targetFunctionStart: number,
+  targetVariableStart?: number
 ): Promise<CollectedCalls> {
   const normalizeFsPath = (p?: string): string | undefined => {
     if (!p) return undefined;
@@ -269,20 +271,36 @@ export async function collectCalls(
     if (!fnName) return false;
     const sfPath = sf.getFilePath();
     const normalizedSfPath = normalizeFsPath(sfPath);
-    if (!normalizedSfPath || normalizedSfPath === sourceFileNormalized) {
+    if (!normalizedSfPath) {
       return false;
     }
     if (localDefinitionCache.has(normalizedSfPath)) {
       return localDefinitionCache.get(normalizedSfPath) ?? false;
     }
 
+    const isSourceFile =
+      sourceFileNormalized && normalizedSfPath === sourceFileNormalized;
+
     let conflict = false;
 
     try {
       const funcDecls = sf.getFunctions?.() || [];
-      conflict = funcDecls.some(
-        (f: any) => typeof f.getName === 'function' && f.getName() === fnName
-      );
+      conflict = funcDecls.some((f: any) => {
+        if (typeof f.getName !== 'function' || f.getName() !== fnName) {
+          return false;
+        }
+        if (isSourceFile) {
+          const start = f.getStart?.();
+          if (
+            typeof start === 'number' &&
+            typeof targetFunctionStart === 'number' &&
+            start === targetFunctionStart
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
 
       if (!conflict) {
         const varDecls = sf.getVariableDeclarations?.() || [];
@@ -290,15 +308,48 @@ export async function collectCalls(
           if (typeof v.getName !== 'function' || v.getName() !== fnName) {
             return false;
           }
+          if (isSourceFile && typeof targetVariableStart === 'number') {
+            const start = v.getStart?.();
+            if (typeof start === 'number' && start === targetVariableStart) {
+              return false;
+            }
+          }
           const init = v.getInitializer && v.getInitializer();
           if (!init || typeof init.getKind !== 'function') {
-            return false;
+            return true;
           }
           const kind = init.getKind();
           return (
             kind === SyntaxKind.FunctionExpression ||
             kind === SyntaxKind.ArrowFunction
           );
+        });
+      }
+
+      if (!conflict && isSourceFile) {
+        const importDecls = sf.getImportDeclarations?.() || [];
+        conflict = importDecls.some((d: any) => {
+          try {
+            const defaultImport = d.getDefaultImport && d.getDefaultImport();
+            if (defaultImport && defaultImport.getText() === fnName) {
+              return true;
+            }
+            const namespaceImport =
+              d.getNamespaceImport && d.getNamespaceImport();
+            if (
+              namespaceImport &&
+              namespaceImport.getName &&
+              namespaceImport.getName() === fnName
+            ) {
+              return true;
+            }
+            const named = d.getNamedImports ? d.getNamedImports() : [];
+            return named.some(
+              (ni: any) => ni.getName && ni.getName() === fnName
+            );
+          } catch (e) {
+            return false;
+          }
         });
       }
     } catch (e) {

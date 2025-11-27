@@ -217,7 +217,11 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       paramNames,
       originalEditor,
       originalSelection,
-      filePath
+      filePath,
+      targetFunction.getStart(),
+      targetVariableDeclaration
+        ? targetVariableDeclaration.getStart()
+        : undefined
     );
 
     if (callCollection.shouldAbort) {
