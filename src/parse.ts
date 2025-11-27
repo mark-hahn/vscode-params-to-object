@@ -686,10 +686,32 @@ export async function collectCalls(
   
   for (const vf of vueFiles) {
     const txt = fs.readFileSync(vf, 'utf8');
+    const scriptRanges: Array<{ start: number; end: number }> = [];
+    const scriptTagRegex = /<script\b[^>]*>/gi;
+    let scriptMatch: RegExpExecArray | null;
+    const scriptCloseTag = '</script>';
+    while ((scriptMatch = scriptTagRegex.exec(txt)) !== null) {
+      const scriptStart = scriptMatch.index;
+      const closeIdx = txt.indexOf(scriptCloseTag, scriptTagRegex.lastIndex);
+      if (closeIdx === -1) {
+        scriptRanges.push({ start: scriptStart, end: txt.length });
+        break;
+      }
+      const rangeEnd = closeIdx + scriptCloseTag.length;
+      scriptRanges.push({ start: scriptStart, end: rangeEnd });
+      scriptTagRegex.lastIndex = rangeEnd;
+    }
     const re = new RegExp(fnName + '\\s*\\(', 'g');
     let m: RegExpExecArray | null;
     while ((m = re.exec(txt)) !== null) {
       const idx = m.index;
+      const inScriptBlock = scriptRanges.some(
+        (range) => idx >= range.start && idx < range.end
+      );
+      if (inScriptBlock) {
+        log('SKIPPING script block match at offset', idx, 'in', vf);
+        continue;
+      }
       const contextStart = Math.max(0, idx - 50);
       const contextEnd = Math.min(txt.length, idx + 100);
       const context = txt.substring(contextStart, contextEnd);

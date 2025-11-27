@@ -31,28 +31,40 @@ export function findTargetFunction(
   let smallestRange = Infinity;
 
   // Helper to update target if cursor is in the function signature
+  let bestInSignature = false;
   const considerFunction = (func: any, varDecl: any = null) => {
     const start = func.getStart();
     const end = func.getEnd();
-    
-    // Only consider if cursor is in the signature, not the body
-    // Find the opening brace of the function body
+
+    if (typeof start !== 'number' || typeof end !== 'number') {
+      return;
+    }
+
+    if (cursorOffset < start || cursorOffset > end) {
+      return;
+    }
+
     const funcText = func.getText();
     const openBraceIdx = funcText.indexOf('{');
-    
+
     let signatureEnd = end;
     if (openBraceIdx >= 0) {
       signatureEnd = start + openBraceIdx;
     }
-    
-    // Cursor must be in the signature range (before the opening brace)
-    if (start <= cursorOffset && cursorOffset <= signatureEnd) {
-      const range = end - start;
-      if (range < smallestRange) {
-        smallestRange = range;
-        targetFunction = func;
-        targetVariableDeclaration = varDecl;
-      }
+
+    const inSignature = cursorOffset <= signatureEnd;
+    const range = end - start;
+
+    const shouldUpdate =
+      !targetFunction ||
+      (inSignature && !bestInSignature) ||
+      (inSignature === bestInSignature && range < smallestRange);
+
+    if (shouldUpdate) {
+      smallestRange = range;
+      targetFunction = func;
+      targetVariableDeclaration = varDecl;
+      bestInSignature = inSignature;
     }
   };
 

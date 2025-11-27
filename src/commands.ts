@@ -294,21 +294,19 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
       const success = await vscode.workspace.applyEdit(edit);
       if (success) {
-        if (!showPreviews) {
-          try {
-            await text.highlightConvertedFunction(
-              filePath,
-              targetStart,
-              targetEnd,
-              newFnText,
-              originalEditor,
-              originalSelection,
-              highlightDelay,
-              highlightStart
-            );
-          } catch (e) {
-            log('error highlighting function', e);
-          }
+        try {
+          await text.highlightConvertedFunction(
+            filePath,
+            targetStart,
+            targetEnd,
+            newFnText,
+            originalEditor,
+            originalSelection,
+            highlightDelay,
+            highlightStart
+          );
+        } catch (e) {
+          log('error highlighting function', e);
         }
 
         void vscode.window.showInformationMessage(
@@ -598,7 +596,8 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         candidate,
         paramNames,
         highlightDelay,
-        originalEditor
+        originalEditor,
+        originalSelection
       );
     }
 
@@ -805,6 +804,23 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       docsToSaveAll.size,
       'file(s) - files are marked dirty, user can save manually'
     );
+
+    if (ok2) {
+      try {
+        await text.highlightConvertedFunction(
+          filePath,
+          targetStart,
+          targetEnd,
+          newFnText2,
+          originalEditor,
+          originalSelection,
+          highlightDelay,
+          highlightStart
+        );
+      } catch (e) {
+        log('error highlighting function after conversions', e);
+      }
+    }
 
     void vscode.window.showInformationMessage(
       `Objectify Params: Converted ${

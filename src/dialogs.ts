@@ -461,10 +461,21 @@ export async function showFuzzyConversionPreview(
   candidate: any,
   paramNames: string[],
   highlightDelay: number,
-  originalEditor: vscode.TextEditor | undefined
+  originalEditor: vscode.TextEditor | undefined,
+  originalSelection: vscode.Selection | undefined
 ): Promise<void> {
-  // Skip preview if highlightDelay is 0
+  const restoreOriginalEditor = async () => {
+    if (originalEditor) {
+      await vscode.window.showTextDocument(originalEditor.document, {
+        selection: originalSelection,
+        preserveFocus: false,
+      });
+    }
+  };
+
+  // Skip preview work if highlightDelay is 0, but still restore editor
   if (highlightDelay <= 0) {
+    await restoreOriginalEditor();
     return;
   }
 
@@ -575,11 +586,7 @@ export async function showFuzzyConversionPreview(
     }
     
     // Restore original editor context (where the function definition is)
-    if (originalEditor) {
-      await vscode.window.showTextDocument(originalEditor.document, {
-        preserveFocus: false,
-      });
-    }
+    await restoreOriginalEditor();
   } catch (e) {
     log('preview error', e);
   } finally {
