@@ -245,6 +245,13 @@ export async function collectCalls(
   originalSelection: vscode.Selection,
   sourceFilePath: string
 ): Promise<CollectedCalls> {
+  const normalizeFsPath = (p?: string): string | undefined => {
+    if (!p) return undefined;
+    const normalized = path.normalize(p);
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  };
+
+  const sourceFileNormalized = normalizeFsPath(sourceFilePath);
   const confirmed: CallCandidate[] = [];
   let fuzzy: CallCandidate[] = [];
   let alreadyConvertedCount = 0;
@@ -261,9 +268,12 @@ export async function collectCalls(
   const hasConflictingLocalDefinition = (sf: SourceFile): boolean => {
     if (!fnName) return false;
     const sfPath = sf.getFilePath();
-    if (!sfPath || sfPath === sourceFilePath) return false;
-    if (localDefinitionCache.has(sfPath)) {
-      return localDefinitionCache.get(sfPath) ?? false;
+    const normalizedSfPath = normalizeFsPath(sfPath);
+    if (!normalizedSfPath || normalizedSfPath === sourceFileNormalized) {
+      return false;
+    }
+    if (localDefinitionCache.has(normalizedSfPath)) {
+      return localDefinitionCache.get(normalizedSfPath) ?? false;
     }
 
     let conflict = false;
@@ -295,7 +305,7 @@ export async function collectCalls(
       conflict = false;
     }
 
-    localDefinitionCache.set(sfPath, conflict);
+    localDefinitionCache.set(normalizedSfPath, conflict);
     return conflict;
   };
 
