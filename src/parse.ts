@@ -510,6 +510,26 @@ export async function collectCalls(
         return { confirmed: [], fuzzy: [], shouldAbort: true };
       }
 
+      const callKind = expr.getKind && expr.getKind();
+      const isIndirectAccess =
+        callKind === SyntaxKind.PropertyAccessExpression ||
+        callKind === SyntaxKind.ElementAccessExpression;
+
+      if (isIndirectAccess && !resolvedTarget) {
+        const args = call.getArguments();
+        const argsText = args.map((a: any) => (a ? a.getText() : 'undefined'));
+        fuzzy.push({
+          filePath: sf.getFilePath(),
+          start: call.getStart(),
+          end: call.getEnd(),
+          exprText: expr.getText(),
+          argsText,
+          reason: 'indirect-access-unresolved',
+          score: 2,
+        });
+        continue;
+      }
+
       // Check for .call, .apply, or .bind usage
       const isCallApplyBind =
         exprText === `${fnName}.call` ||
