@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as glob from 'glob';
 import { Project, SourceFile, SyntaxKind } from 'ts-morph';
 import * as utils from './utils';
+import * as dialogs from './dialogs';
 
 const { log } = utils.getLog('pars');
 
@@ -255,6 +256,49 @@ export async function collectCalls(
     'source files (node_modules excluded where possible)'
   );
 
+  const localDefinitionCache = new Map<string, boolean>();
+
+  const hasConflictingLocalDefinition = (sf: SourceFile): boolean => {
+    if (!fnName) return false;
+    const sfPath = sf.getFilePath();
+    if (!sfPath || sfPath === sourceFilePath) return false;
+    if (localDefinitionCache.has(sfPath)) {
+      return localDefinitionCache.get(sfPath) ?? false;
+    }
+
+    let conflict = false;
+
+    try {
+      const funcDecls = sf.getFunctions?.() || [];
+      conflict = funcDecls.some(
+        (f: any) => typeof f.getName === 'function' && f.getName() === fnName
+      );
+
+      if (!conflict) {
+        const varDecls = sf.getVariableDeclarations?.() || [];
+        conflict = varDecls.some((v: any) => {
+          if (typeof v.getName !== 'function' || v.getName() !== fnName) {
+            return false;
+          }
+          const init = v.getInitializer && v.getInitializer();
+          if (!init || typeof init.getKind !== 'function') {
+            return false;
+          }
+          const kind = init.getKind();
+          return (
+            kind === SyntaxKind.FunctionExpression ||
+            kind === SyntaxKind.ArrowFunction
+          );
+        });
+      }
+    } catch (e) {
+      conflict = false;
+    }
+
+    localDefinitionCache.set(sfPath, conflict);
+    return conflict;
+  };
+
   for (const sf of files) {
     const sfPath = sf.getFilePath && sf.getFilePath();
     if (sfPath && sfPath.indexOf(path.sep + 'node_modules' + path.sep) >= 0)
@@ -338,6 +382,19 @@ export async function collectCalls(
         exprText.endsWith('.' + fnName) ||
         exprText.endsWith('[' + fnName + ']');
       if (!looksLikeCall) continue;
+
+      if (hasConflictingLocalDefinition(sf)) {
+        await dialogs.showNameCollisionDialog(
+          {
+            filePath: sf.getFilePath(),
+            start: call.getStart(),
+            end: call.getEnd(),
+          },
+          originalEditor,
+          originalSelection
+        );
+        return { confirmed: [], fuzzy: [], shouldAbort: true };
+      }
 
       // Check for .call, .apply, or .bind usage
       const isCallApplyBind =
@@ -459,23 +516,25 @@ export async function collectCalls(
             const isCollision = !isMatch;
 
             if (isCollision) {
-              // Extract arguments before storing collision
-              const args = call.getArguments();
-              const argsText = args.map((a: any) =>
-                a ? a.getText() : 'undefined'
-              );
-              
-              // Store name collision for later processing
-              fuzzy.push({
+              const collisionCandidate = {
                 filePath: sf.getFilePath(),
                 start: call.getStart(),
                 end: call.getEnd(),
-                exprText: expr.getText(),
-                argsText: argsText,
-                reason: 'name-collision',
-                score: 1,
+              };
+
+              log('Name collision detected while scanning calls:', {
+                file: collisionCandidate.filePath,
+                start: collisionCandidate.start,
+                end: collisionCandidate.end,
+                expr: expr.getText(),
               });
-              continue;
+
+              await dialogs.showNameCollisionDialog(
+                collisionCandidate,
+                originalEditor,
+                originalSelection
+              );
+              return { confirmed: [], fuzzy: [], shouldAbort: true };
             }
           }
 
@@ -593,6 +652,58 @@ export async function collectCalls(
         // If this is a property access (e.g., x.sendToWebview) and we couldn't resolve the symbol,
         // it's likely a different function with the same name - treat as fuzzy
         const isPropertyAccess = exprText !== fnName && (exprText.includes('.') || exprText.includes('['));
+
+        if (
+          resolvedTarget &&
+          fnName &&
+          !isPropertyAccess &&
+          sf.getFilePath() &&
+          sf.getFilePath() !== sourceFilePath
+        ) {
+          const hasLocalFunctionDefinition = (() => {
+            try {
+              const funcDecls = sf.getFunctions();
+              if (
+                funcDecls.some(
+                  (f: any) =>
+                    typeof f.getName === 'function' && f.getName() === fnName
+                )
+              ) {
+                return true;
+              }
+              const varDecls = sf.getVariableDeclarations();
+              return varDecls.some((v: any) => {
+                if (typeof v.getName !== 'function' || v.getName() !== fnName) {
+                  return false;
+                }
+                const init = v.getInitializer && v.getInitializer();
+                if (!init || typeof init.getKind !== 'function') {
+                  return false;
+                }
+                const kind = init.getKind();
+                return (
+                  kind === SyntaxKind.FunctionExpression ||
+                  kind === SyntaxKind.ArrowFunction
+                );
+              });
+            } catch (e) {
+              return false;
+            }
+          })();
+
+          if (hasLocalFunctionDefinition) {
+            await dialogs.showNameCollisionDialog(
+              {
+                filePath: sf.getFilePath(),
+                start: call.getStart(),
+                end: call.getEnd(),
+              },
+              originalEditor,
+              originalSelection
+            );
+            return { confirmed: [], fuzzy: [], shouldAbort: true };
+          }
+        }
         
         if (isPropertyAccess) {
           // Property access without symbol resolution - likely name collision
