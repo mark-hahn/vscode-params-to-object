@@ -52,7 +52,7 @@ export async function showFunctionConversionDialog(
         ? doc.positionAt(idx + originalFunctionText.length)
         : doc.positionAt(targetEnd);
 
-    await vscode.window.showTextDocument(doc, { preview: false });
+    await vscode.window.showTextDocument(doc, { preview: true });
     const editor = vscode.window.activeTextEditor;
 
     if (editor) {
