@@ -243,6 +243,7 @@ export interface RestParameterInfo {
   isRestParameter: boolean;
   paramNames: string[];
   restTupleElements: string[];
+  optionalParamNames: boolean[];
 }
 
 /**
@@ -254,6 +255,7 @@ export async function extractParameterNames(
   let paramNames: string[] = [];
   let isRestParameter = false;
   let restTupleElements: string[] = [];
+  let optionalParamNames: boolean[] = [];
 
   if (
     params.length === 1 &&
@@ -319,13 +321,32 @@ export async function extractParameterNames(
       );
       return null;
     }
+    optionalParamNames = new Array(paramNames.length).fill(false);
   } else {
     paramNames = params.map((p: any) => p.getName());
+    optionalParamNames = params.map((p: any) => {
+      try {
+        if (typeof p.isOptional === 'function' && p.isOptional()) {
+          return true;
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        if (typeof p.hasInitializer === 'function' && p.hasInitializer()) {
+          return true;
+        }
+      } catch (e) {
+        // ignore
+      }
+      return false;
+    });
   }
 
   return {
     isRestParameter,
     paramNames,
     restTupleElements,
+    optionalParamNames,
   };
 }

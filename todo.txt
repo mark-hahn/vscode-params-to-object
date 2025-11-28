@@ -4,7 +4,6 @@ todo ...
 
 testing ...
   svelte
-  test 0 delay
   params
     default
     rest

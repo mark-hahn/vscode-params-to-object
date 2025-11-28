@@ -147,21 +147,49 @@ export function insertObjectVariableDestructureLine(
 /**
  * Build replacement text for a call site
  */
+function isUndefinedLiteral(argText: string | undefined): boolean {
+  if (!argText) {
+    return false;
+  }
+  const trimmed = argText.trim();
+  return (
+    trimmed.length === 0 ||
+    trimmed === 'undefined' ||
+    trimmed === 'void 0' ||
+    trimmed === 'void0' ||
+    trimmed === 'void(0)'
+  );
+}
+
 export function buildCallReplacement(
   exprText: string,
-  argsTextArr: string[],
-  paramNames: string[]
+  argsTextArr: string[] | null,
+  paramNames: string[],
+  optionalParamFlags: boolean[] = []
 ): string {
-  const props = paramNames
-    .map((name, idx) => {
-      const aText =
-        argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-      // Use shorthand if argument is exactly the same identifier
-      if (aText === name || aText.trim() === name) return `${name}`;
-      return `${name}:${aText}`;
-    })
-    .join(', ');
-  return `${exprText}({ ${props} })`;
+  const props: string[] = [];
+
+  for (let i = 0; i < paramNames.length; i++) {
+    const name = paramNames[i];
+    const argText = argsTextArr && argsTextArr.length > i ? argsTextArr[i] : undefined;
+    const argMissing = typeof argText === 'undefined';
+    const argIsUndefinedLiteral = !argMissing && isUndefinedLiteral(argText);
+    const isOptional = optionalParamFlags[i] === true;
+
+    if (isOptional && (argMissing || argIsUndefinedLiteral)) {
+      continue;
+    }
+
+    const emittedArg = argMissing ? 'undefined' : argText || 'undefined';
+    const trimmedArg = emittedArg.trim();
+    if (trimmedArg === name) {
+      props.push(name);
+    } else {
+      props.push(`${name}:${emittedArg}`);
+    }
+  }
+
+  return `${exprText}({ ${props.join(', ')} })`;
 }
 
 /**
@@ -171,7 +199,8 @@ export function buildCallReplacement(
 export function buildTemplateCallReplacement(
   fullText: string,
   rangeStart: number,
-  paramNames: string[]
+  paramNames: string[],
+  optionalParamFlags: boolean[] = []
 ): { replacement: string; start: number; end: number } | null {
   const after = fullText.slice(rangeStart);
   const parenIndex = after.indexOf('(');
@@ -187,21 +216,17 @@ export function buildTemplateCallReplacement(
     .map((s: string) => s.trim())
     .filter((s: string) => s.length);
   
-  if (argParts.length !== paramNames.length) {
+  if (argParts.length > paramNames.length) {
     return null;
   }
   
-  const props = paramNames
-    .map((name, idx) => {
-      const arg = argParts[idx];
-      // Use shorthand if argument is exactly the same identifier
-      if (arg === name || arg.trim() === name) return `${name}`;
-      return `${name}:${arg}`;
-    })
-    .join(', ');
-  
   const functionName = fullText.slice(rangeStart, rangeStart + parenIndex);
-  const replacement = `${functionName}({ ${props} })`;
+  const replacement = buildCallReplacement(
+    functionName,
+    argParts,
+    paramNames,
+    optionalParamFlags
+  );
   
   return {
     replacement,
@@ -216,7 +241,8 @@ export function buildTemplateCallReplacement(
 export async function applyCallEdits(
   allCandidates: any[],
   paramNames: string[],
-  buildReplacement: (exprText: string, argsText: string[]) => string
+  buildReplacement: (exprText: string, argsText: string[]) => string,
+  optionalParamFlags: boolean[] = []
 ): Promise<Map<string, vscode.TextDocument>> {
   const editAll = new vscode.WorkspaceEdit();
   const docsToSaveAll = new Map<string, vscode.TextDocument>();
@@ -240,31 +266,20 @@ export async function applyCallEdits(
       const uri = vscode.Uri.file(c.filePath);
       const doc = await vscode.workspace.openTextDocument(uri);
       docsToSaveAll.set(c.filePath, doc);
-      const full = doc.getText();
-      const after = full.slice(c.rangeStart);
-      const parenIndex = after.indexOf('(');
-      const closeIndex = after.indexOf(')');
-      if (parenIndex >= 0 && closeIndex > parenIndex) {
-        const argsText = after.slice(parenIndex + 1, closeIndex);
-        const argParts = argsText
-          .split(',')
-          .map((s: string) => s.trim())
-          .filter((s: string) => s.length);
-        if (argParts.length === paramNames.length) {
-          const props = paramNames
-            .map((name, idx) => `${name}:${argParts[idx]}`)
-            .join(', ');
-          const replaced =
-            after.slice(0, parenIndex + 1) +
-            `{ ${props} }` +
-            after.slice(closeIndex);
-          const newFull = full.slice(0, c.rangeStart) + replaced;
-          editAll.replace(
-            uri,
-            new vscode.Range(doc.positionAt(0), doc.positionAt(full.length)),
-            newFull
-          );
-        }
+      const templateResult = buildTemplateCallReplacement(
+        doc.getText(),
+        c.rangeStart,
+        paramNames,
+        optionalParamFlags
+      );
+      if (templateResult) {
+        const startPos = doc.positionAt(templateResult.start);
+        const endPos = doc.positionAt(templateResult.end);
+        editAll.replace(
+          uri,
+          new vscode.Range(startPos, endPos),
+          templateResult.replacement
+        );
       }
     }
   }

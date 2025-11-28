@@ -246,7 +246,12 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       return;
     }
 
-    const { isRestParameter, paramNames, restTupleElements } = paramInfo;
+    const {
+      isRestParameter,
+      paramNames,
+      restTupleElements,
+      optionalParamNames,
+    } = paramInfo;
 
     const targetStart = targetFunction.getStart();
     const targetEnd = targetFunction.getEnd();
@@ -467,17 +472,13 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       const buildReplacement = (
         exprText: string,
         argsTextArr: string[] | null
-      ) => {
-        const props = paramNames
-          .map((name, idx) => {
-            const aText =
-              argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-            if (aText === name) return `${name}`;
-            return `${name}:${aText}`;
-          })
-          .join(', ');
-        return `${exprText}({ ${props} })`;
-      };
+      ) =>
+        text.buildCallReplacement(
+          exprText,
+          argsTextArr,
+          paramNames,
+          optionalParamNames
+        );
 
       const { internal: internalCalls, external: externalCalls } =
         splitInternalCalls(confirmed, filePath, targetStart, targetEnd);
@@ -519,6 +520,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
           confirmed.length,
           0,
           paramNames,
+          optionalParamNames,
           highlightDelay,
           originalEditor,
           originalSelection
@@ -724,6 +726,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       await dialogs.showFuzzyConversionPreview(
         candidate,
         paramNames,
+        optionalParamNames,
         highlightDelay,
         originalEditor,
         originalSelection
@@ -738,6 +741,7 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         totalCalls,
         fuzzy.length,
         paramNames,
+        optionalParamNames,
         highlightDelay,
         originalEditor,
         originalSelection
@@ -767,17 +771,16 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     const editAll = new vscode.WorkspaceEdit();
     const docsToSaveAll = new Map<string, vscode.TextDocument>();
-    const buildReplacementAll = (exprText: string, argsTextArr: string[]) => {
-      const props = paramNames
-        .map((name, idx) => {
-          const aText =
-            argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-          if (aText === name) return `${name}`;
-          return `${name}:${aText}`;
-        })
-        .join(', ');
-      return `${exprText}({ ${props} })`;
-    };
+    const buildReplacementAll = (
+      exprText: string,
+      argsTextArr: string[] | null
+    ) =>
+      text.buildCallReplacement(
+        exprText,
+        argsTextArr,
+        paramNames,
+        optionalParamNames
+      );
 
     const allCandidates = [...confirmed, ...acceptedFuzzy];
     log(
@@ -884,31 +887,20 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
         const uri = vscode.Uri.file(c.filePath);
         const doc = await vscode.workspace.openTextDocument(uri);
         docsToSaveAll.set(c.filePath, doc);
-        const full = doc.getText();
-        const after = full.slice(c.rangeStart);
-        const parenIndex = after.indexOf('(');
-        const closeIndex = after.indexOf(')');
-        if (parenIndex >= 0 && closeIndex > parenIndex) {
-          const argsText = after.slice(parenIndex + 1, closeIndex);
-          const argParts = argsText
-            .split(',')
-            .map((s: string) => s.trim())
-            .filter((s: string) => s.length);
-          if (argParts.length === paramNames.length) {
-            const props = paramNames
-              .map((name, idx) => `${name}:${argParts[idx]}`)
-              .join(', ');
-            const replaced =
-              after.slice(0, parenIndex + 1) +
-              `{ ${props} }` +
-              after.slice(closeIndex);
-            const newFull = full.slice(0, c.rangeStart) + replaced;
-            editAll.replace(
-              uri,
-              new vscode.Range(doc.positionAt(0), doc.positionAt(full.length)),
-              newFull
-            );
-          }
+        const templateResult = text.buildTemplateCallReplacement(
+          doc.getText(),
+          c.rangeStart,
+          paramNames,
+          optionalParamNames
+        );
+        if (templateResult) {
+          const startPos = doc.positionAt(templateResult.start);
+          const endPos = doc.positionAt(templateResult.end);
+          editAll.replace(
+            uri,
+            new vscode.Range(startPos, endPos),
+            templateResult.replacement
+          );
         }
       }
     }

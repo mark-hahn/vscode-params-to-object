@@ -5,25 +5,6 @@ import * as text from './text';
 const { log } = utils.getLog('dlgs');
 
 /**
- * Helper to build replacement text for a call
- */
-function buildCallReplacement(
-  exprText: string,
-  argsTextArr: string[],
-  paramNames: string[]
-): string {
-  const props = paramNames
-    .map((name, idx) => {
-      const aText =
-        argsTextArr && argsTextArr[idx] ? argsTextArr[idx] : 'undefined';
-      if (aText === name) return `${name}`;
-      return `${name}:${aText}`;
-    })
-    .join(', ');
-  return `${exprText}({ ${props} })`;
-}
-
-/**
  * Show the function being converted with green highlight and confirmation dialog
  * Shows a preview of the converted function signature
  * Returns true if aborted, false if user chose to continue
@@ -160,6 +141,7 @@ export async function monitorConfirmedCalls(
   totalCalls: number,
   startIdx: number,
   paramNames: string[],
+  optionalParamFlags: boolean[],
   highlightDelay: number,
   originalEditor: vscode.TextEditor | undefined,
   originalSelection: vscode.Selection | undefined
@@ -188,7 +170,12 @@ export async function monitorConfirmedCalls(
           vscode.TextEditorRevealType.AtTop
         );
 
-        const repl = buildCallReplacement(c.exprText, c.argsText, paramNames);
+        const repl = text.buildCallReplacement(
+          c.exprText,
+          c.argsText,
+          paramNames,
+          optionalParamFlags
+        );
 
         // Apply the edit temporarily to show preview
         const priorSelections = editor.selections.slice();
@@ -454,6 +441,7 @@ export async function reviewFuzzyCall(
 export async function showFuzzyConversionPreview(
   candidate: any,
   paramNames: string[],
+  optionalParamFlags: boolean[],
   highlightDelay: number,
   originalEditor: vscode.TextEditor | undefined,
   originalSelection: vscode.Selection | undefined
@@ -519,7 +507,8 @@ export async function showFuzzyConversionPreview(
         const conversionResult = text.buildTemplateCallReplacement(
           fullText,
           candidate.rangeStart,
-          paramNames
+          paramNames,
+          optionalParamFlags
         );
         
         if (!conversionResult) {
@@ -545,10 +534,11 @@ export async function showFuzzyConversionPreview(
         
         startP = doc.positionAt(candidate.start);
         endP = doc.positionAt(candidate.end);
-        repl = buildCallReplacement(
+        repl = text.buildCallReplacement(
           candidate.exprText,
           candidate.argsText,
-          paramNames
+          paramNames,
+          optionalParamFlags
         );
       }
 
