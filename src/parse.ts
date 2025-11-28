@@ -287,7 +287,8 @@ export async function collectCalls(
   targetFunctionEnd: number,
   isTargetFunctionNested: boolean,
   targetVariableStart?: number,
-  targetIsConstructor = false
+  targetIsConstructor = false,
+  targetRequiresPropertyAccess = false
 ): Promise<CollectedCalls> {
   const normalizeFsPath = (p?: string): string | undefined => {
     if (!p) return undefined;
@@ -449,6 +450,10 @@ export async function collectCalls(
         ? `new ${exprText}`
         : exprText;
       const callStart = call.getStart();
+      const callKind = expr.getKind && expr.getKind();
+      const isPropertyAccessExpression =
+        callKind === SyntaxKind.PropertyAccessExpression ||
+        callKind === SyntaxKind.ElementAccessExpression;
       if (
         restrictToLexicalScope &&
         isSameSourceFile &&
@@ -536,11 +541,12 @@ export async function collectCalls(
         exprText.endsWith('[' + fnName + ']');
       if (!looksLikeCall) continue;
 
+      if (targetRequiresPropertyAccess && !isPropertyAccessExpression) {
+        continue;
+      }
+
       const localConflict = hasConflictingLocalDefinition(sf);
-      const callKind = expr.getKind && expr.getKind();
-      const isIndirectAccess =
-        callKind === SyntaxKind.PropertyAccessExpression ||
-        callKind === SyntaxKind.ElementAccessExpression;
+      const isIndirectAccess = isPropertyAccessExpression;
 
       if (isIndirectAccess && !resolvedTarget) {
         const args = call.getArguments();
@@ -800,7 +806,7 @@ export async function collectCalls(
         
         // If this is a property access (e.g., x.sendToWebview) and we couldn't resolve the symbol,
         // it's likely a different function with the same name - treat as fuzzy
-        const isPropertyAccess = exprText !== fnName && (exprText.includes('.') || exprText.includes('['));
+        const isPropertyAccess = isPropertyAccessExpression;
 
         if (localConflict && !isPropertyAccess) {
           await dialogs.showNameCollisionDialog(

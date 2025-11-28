@@ -234,9 +234,15 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
 
     const { targetFunction, targetVariableDeclaration, params, fnName } =
       functionResult;
-    const targetIsConstructor =
-      typeof targetFunction.getKind === 'function' &&
-      targetFunction.getKind() === SyntaxKind.Constructor;
+    const targetKind =
+      typeof targetFunction.getKind === 'function'
+        ? targetFunction.getKind()
+        : undefined;
+    const targetIsConstructor = targetKind === SyntaxKind.Constructor;
+    const targetRequiresPropertyAccess =
+      targetKind === SyntaxKind.MethodDeclaration &&
+      typeof targetFunction.isStatic === 'function' &&
+      targetFunction.isStatic();
 
     const cfg = vscode.workspace.getConfiguration('objectifyParams');
     const showPreviews = cfg.get('1.showPreviews') as boolean;
@@ -375,7 +381,8 @@ export async function convertCommandHandler(...args: any[]): Promise<void> {
       targetVariableDeclaration
         ? targetVariableDeclaration.getStart()
         : undefined,
-      targetIsConstructor
+      targetIsConstructor,
+      targetRequiresPropertyAccess
     );
 
     if (callCollection.shouldAbort) {
