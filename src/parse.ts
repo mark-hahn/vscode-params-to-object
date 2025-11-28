@@ -157,8 +157,15 @@ export function extractParameterTypes(
     return `{ ${paramNames
       .map((n: string, i: number) => {
         const param = params[0];
-        const isOptional =
-          param && param.hasQuestionToken && param.hasQuestionToken();
+        const hasQuestion =
+          param && typeof param.hasQuestionToken === 'function'
+            ? param.hasQuestionToken()
+            : false;
+        const hasInitializer =
+          param && typeof param.hasInitializer === 'function'
+            ? param.hasInitializer()
+            : false;
+        const isOptional = hasQuestion || hasInitializer;
         const optionalMark = isOptional ? '?' : '';
         return `${n}${optionalMark}: ${flatTypes[i] || 'any'}`;
       })
@@ -167,8 +174,15 @@ export function extractParameterTypes(
     return `{ ${paramNames
       .map((n: string, i: number) => {
         const param = params[i];
-        const isOptional =
-          param && param.hasQuestionToken && param.hasQuestionToken();
+        const hasQuestion =
+          param && typeof param.hasQuestionToken === 'function'
+            ? param.hasQuestionToken()
+            : false;
+        const hasInitializer =
+          param && typeof param.hasInitializer === 'function'
+            ? param.hasInitializer()
+            : false;
+        const isOptional = hasQuestion || hasInitializer;
         const optionalMark = isOptional ? '?' : '';
         return `${n}${optionalMark}: ${paramTypes[i] || 'any'}`;
       })

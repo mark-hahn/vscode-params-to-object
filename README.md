@@ -25,22 +25,23 @@ Automatically refactor JavaScript or TypeScript functions to use object paramete
 
 #### Before
 ```typescript
-function createUser(name: string, age: number, email?: string) {
-  return { name, age, email };
+function createUser(name: string, age = 22) {
+  return { name, age };
 }
 
-createUser("Alice", 30, "alice@example.com");
-createUser("Bob", 25);
+createUser("Alice", 30);
+createUser("Bob");
 ```
 
 #### After
 ```typescript
-function createUser({ name, age, email }: { name: string; age: number; email?: string }) {
-  return { name, age, email };
+function createUser($: { name: string; age?: number }) {
+  let { name, age = 22 } = $;
+  return { name, age };
 }
 
-createUser({ name: "Alice", age: 30, email: "alice@example.com" });
-createUser({ name: "Bob", age: 25 });
+createUser({ name:"Alice", age:30 });
+createUser({ name:"Bob" });
 ```
 
 ### Configuration
