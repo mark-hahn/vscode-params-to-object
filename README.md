@@ -50,14 +50,14 @@ Access settings via **File > Preferences > Settings** and search for "Objectify 
 
 #### `objectifyParams.1.showPreviews`
 - **Type**: `boolean`
-- **Default**: `false`
+- **Default**: `true`
 - Show preview dialog for every call conversion (including confirmed safe calls)
 
 #### `objectifyParams.2.highlightDelay`
 - **Type**: `number`
-- **Default**: `500`
+- **Default**: `1000`
 - **Range**: 0-5000ms
-- Duration to show preview highlights. Set to `0` to show only the dialog without delay
+- Duration in ms to show preview highlights. Set to `0` to show only the dialog without delay
 
 #### `objectifyParams.3.objectVariable`
 - **Type**: `string`

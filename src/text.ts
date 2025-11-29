@@ -118,9 +118,32 @@ export function insertObjectVariableDestructureLine(
     return fnText;
   }
 
-  const braceIndex = fnText.indexOf('{');
+  const openParenIndex = fnText.indexOf('(');
+  let braceIndex = -1;
+  if (openParenIndex >= 0) {
+    let depth = 1;
+    let cursor = openParenIndex + 1;
+    while (cursor < fnText.length && depth > 0) {
+      const ch = fnText[cursor];
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      cursor++;
+    }
+    const closeParenIndex = cursor - 1;
+    for (let i = closeParenIndex + 1; i < fnText.length; i++) {
+      const ch = fnText[i];
+      if (ch === '{') {
+        braceIndex = i;
+        break;
+      }
+    }
+  }
+
   if (braceIndex === -1) {
-    return fnText;
+    braceIndex = fnText.indexOf('{');
+    if (braceIndex === -1) {
+      return fnText;
+    }
   }
 
   const beforeBody = fnText.slice(0, braceIndex + 1);
